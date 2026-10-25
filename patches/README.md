@@ -6,10 +6,16 @@ This bundle reproduces the current Termux setup:
 - the webpack build fix required on Android/arm64;
 - the compact phone UI (`0.8×` at ≤927 px), safe-area-aware drawer, and
   questionnaire fit;
-- the production-only PWA shell (manifest, icons, pass-through service worker).
+- the production-only PWA shell (manifest, icons, pass-through service worker);
+- a dated deployment runbook and learnings/change log under `docs/`.
 
 The patches are based on commit `0795ef1`. Apply them to a clean checkout at
 that commit (or a tree that matches it). Use `--check` first on any other tree.
+
+> **Current branch note:** `termux-mobile-setup` at `97a6f34` already contains
+> `0001` and `0003` (and the operational wrappers described in
+> [`TERMUX.md`](../TERMUX.md)). Do **not** reapply those code patches there.
+> Apply only `0004` to add the two reference docs.
 
 Verified on: Android/arm64, Termux, Node 26.3.1, npm 11.17.0, Next 16.3.2.
 The production build succeeds and both `http://127.0.0.1:3000` and
@@ -24,11 +30,16 @@ build device because it has no Chrome/Chromium; see “Phone/PWA verification”
 | `0001-core-barrel-browser-safe.patch` | `git apply` | Removes the browser-unsafe `coverage.ts` re-export from `src/core/index.ts` (it imports `node:crypto`). |
 | `0002-termux-runit-service.patch` | `patch -p1` in `$PREFIX/var/service` | Adds `learnharness/run` and `learnharness/log/run`; the run script execs Next directly on `0.0.0.0:3000`. |
 | `0003-mobile-pwa-shell.patch` | `git apply --binary` | Adds the compact mobile UI, `0.8×` phone density, dock fit, PWA manifest/icons/service worker, and related touch/safe-area changes. |
+| `0004-termux-mobile-docs.patch` | `git apply` | Adds `docs/termux-mobile-deployment.md` and `docs/termux-mobile-notes.md`. Apply after `0003`. |
 
-`0003` contains binary PNG icons; `--binary` is required. The patches were
-verified to apply cleanly to a pristine `HEAD` worktree and reproduce the current
-files byte-for-byte. `0002` was verified against an empty directory and against
-the installed units.
+`0003` contains binary PNG icons; `--binary` is required. `0004` is
+documentation-only: it has no effect on the build or service, so no rebuild is
+needed for it.
+
+The patches were verified to apply cleanly to a pristine `HEAD` worktree and
+reproduce the current files byte-for-byte. `0004` was additionally verified
+after `0003`, and reversing `0004` restores the pre-doc tree. `0002` was verified
+against an empty directory and against the installed units.
 
 ## Prerequisites
 
@@ -47,7 +58,9 @@ export LOGDIR="$PREFIX/var/log"
 ## Apply the patches
 
 Extract the zip at the repository root so the `patches/` directory sits next to
-`package.json`, then work from that root:
+`package.json`, then work from that root.
+
+On a clean `0795ef1` tree, check and apply the full sequence:
 
 ```sh
 cd /data/data/com.termux/files/home/learning/learnharness
@@ -57,14 +70,23 @@ sha256sum -c patches/SHA256SUMS
 
 git apply --check patches/0001-core-barrel-browser-safe.patch
 git apply --check --binary patches/0003-mobile-pwa-shell.patch
-```
+git apply --check patches/0004-termux-mobile-docs.patch
 
-If both checks say OK, apply them:
-
-```sh
 git apply patches/0001-core-barrel-browser-safe.patch
 git apply --binary patches/0003-mobile-pwa-shell.patch
+git apply patches/0004-termux-mobile-docs.patch
 ```
+
+On the current `termux-mobile-setup` branch (`97a6f34`+), `0001` and `0003` are
+already committed. Apply only the docs patch:
+
+```sh
+git apply --check patches/0004-termux-mobile-docs.patch
+git apply patches/0004-termux-mobile-docs.patch
+```
+
+`0004` is docs-only and belongs after `0003`. It adds the two reference
+documents; it does not change application code, the build, or the service.
 
 Now install the runit units. This assumes a fresh service directory; remove an
 existing unit first if you are replacing one:
@@ -246,8 +268,8 @@ unit.
 - **`next-env.d.ts` is generated.** `next build` rewrites its type imports from
   `.next/dev/types/*` to `.next/types/*`; `next dev` flips them back. It is not
   part of these patches; the build regenerates it.
-- **The zip contains code changes only.** It does not include `node_modules`,
-  `.next`, `auth.json`, `data/`, prompts, or logs.
+- **The zip contains patches and reference docs only.** It does not include
+  `node_modules`, `.next`, `auth.json`, `data/`, prompts, or logs.
 
 ## Rollback
 
@@ -257,11 +279,16 @@ export SVDIR="$PREFIX/var/service"
 sv down learnharness
 rm -rf "$SVDIR/learnharness" "$PREFIX/var/log/sv/learnharness"
 
+git apply -R patches/0004-termux-mobile-docs.patch
 git apply -R --binary patches/0003-mobile-pwa-shell.patch
 git apply -R patches/0001-core-barrel-browser-safe.patch
 
 NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=3072 \
   npm run build -- --webpack
 ```
+
+If you are on `termux-mobile-setup` (`97a6f34`+), `0001`/`0003` are committed
+and should not be reversed to remove the docs. Reverse only `0004` if you just
+want the pre-doc tree.
 
 Your data (`auth.json`, `data/`) is not touched by the rollback.
