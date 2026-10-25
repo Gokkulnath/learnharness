@@ -51,6 +51,16 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 const SIDEBAR_AUTOCLOSE = 928;
 
+/* The browser's compact breakpoint. Below this a 288px inline sidebar leaves
+ * a phone with ~124px of lesson, so the browser (unlike Electron, which owns
+ * a window and widens it) turns the sidebar into an overlay drawer. Same
+ * number as SIDEBAR_AUTOCLOSE: 640px content floor + 288px sidebar. */
+const COMPACT_QUERY = `(max-width: ${SIDEBAR_AUTOCLOSE - 1}px)`;
+
+function isCompactViewport() {
+	return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(COMPACT_QUERY).matches;
+}
+
 // Module scope, guarded for SSR (the server has no navigator).
 const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
 
@@ -73,9 +83,11 @@ declare global {
 	}
 }
 
-const SidebarContext = createContext<{ open: boolean; toggle: () => void }>({
+const SidebarContext = createContext<{ open: boolean; toggle: () => void; close: () => void; compact: boolean }>({
 	open: false,
 	toggle: () => {},
+	close: () => {},
+	compact: false,
 });
 
 export function useSidebar() {
@@ -94,6 +106,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	// mismatch); the stored value is applied after mount.
 	const [open, setOpen] = useState(false);
 	const [narrow, setNarrow] = useState(false);
+	// Browser-only overlay mode (<928px). Electron keeps its own narrow
+	// behavior (auto-close + expand the window), so this stays false there.
+	const [compact, setCompact] = useState(false);
 	const [mounted, setMounted] = useState(false);
 
 	useEffect(() => {
@@ -118,10 +133,33 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 		void window.lh?.getZoom?.().then(setZoomVar);
 
 		const stored = localStorage.getItem(STORAGE_KEY);
-		// Default: open (first run introduces the sidebar).
-		setOpen(stored === null ? true : stored === "1");
+		// Default: open on desktop (first run introduces the sidebar). A phone
+		// starts closed: the persisted desktop preference must not push a
+		// 288px drawer (plus backdrop) over the lesson on every load. Electron
+		// keeps its own narrow-window behavior (expand-to-restore), so it
+		// always honors the persisted preference here.
+		setOpen((IS_ELECTRON || !isCompactViewport()) && (stored === null || stored === "1"));
 		setMounted(true);
 		return () => off?.();
+	}, []);
+
+	// Browser compact breakpoint: below it the sidebar is an overlay drawer
+	// (fixed, translate-x) instead of an inline 288px column. Entering the
+	// compact range closes it; leaving it restores the persisted desktop
+	// preference. Electron never takes this path (its window is widened).
+	useEffect(() => {
+		if (IS_ELECTRON) return;
+		if (typeof window.matchMedia !== "function") return;
+		const mq = window.matchMedia(COMPACT_QUERY);
+		const sync = (matches: boolean) => {
+			setCompact(matches);
+			if (matches) setOpen(false);
+			else setOpen(localStorage.getItem(STORAGE_KEY) !== "0");
+		};
+		sync(mq.matches);
+		const onChange = (e: MediaQueryListEvent) => sync(e.matches);
+		mq.addEventListener("change", onChange);
+		return () => mq.removeEventListener("change", onChange);
 	}, []);
 
 	// Narrow-window auto-close/auto-restore (see SIDEBAR_AUTOCLOSE note):
@@ -149,10 +187,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 			return;
 		}
 		setOpen((v) => {
-			localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
+			// The compact drawer is transient — opening it on a phone must not
+			// rewrite the desktop preference (default open / closed at ≥928px).
+			if (!compact) localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
 			return !v;
 		});
-	}, [narrow, open]);
+	}, [narrow, open, compact]);
+
+	// Dismissals that do NOT touch the preference: backdrop tap, Escape,
+	// navigation on a phone.
+	const close = useCallback(() => setOpen(false), []);
 
 	// ⌘B: the global shortcut dispatches kbdEventForAction("toggle-sidebar")
 	// and the context answers on exactly that name — the shared spelling
@@ -168,9 +212,19 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	}, [toggle]);
 
 	return (
-		<SidebarContext.Provider value={{ open: open && !narrow, toggle }}>
-			{/* transitions gated on mount: no slide-in flash on page load */}
-			<div className={cn("flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
+		<SidebarContext.Provider value={{ open: open && !narrow, toggle, close, compact }}>
+			{/* The safe-area insets are spent once, here, so every page root
+			    (h-full) lives inside the status/gesture bars in an installed
+			    app. The compact drawer is fixed and escapes this padding, so
+			    it pays its own insets inside the panel. */}
+			<div
+				className={cn(
+					"flex h-dvh pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
+					mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity,transform]",
+				)}
+			>
+				{children}
+			</div>
 		</SidebarContext.Provider>
 	);
 }
@@ -192,8 +246,8 @@ export function SidebarToggle() {
 	return (
 		<span
 			className={cn(
-				"sidebar-motion lh-no-drag relative flex h-9 shrink-0 overflow-hidden duration-200",
-				open ? "w-0 -mr-3" : "w-9 mr-0 lh-closed-toggle",
+				"sidebar-motion lh-no-drag relative flex h-9 shrink-0 overflow-hidden duration-200 pointer-coarse:h-11",
+				open ? "w-0 -mr-3" : "w-9 mr-0 lh-closed-toggle pointer-coarse:w-11",
 			)}
 		>
 			<Hint label="Open sidebar" action="toggle-sidebar">
@@ -297,7 +351,7 @@ export function SessionRow({
 			onContextMenu={onContextMenu}
 			data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
 			className={cn(
-				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
+				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent pointer-coarse:min-h-11",
 				active && "bg-accent",
 				kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
 			)}
@@ -339,7 +393,7 @@ export function RenameRow({ chat, onCommit, onCancel }: { chat: ChatListItem; on
 	return (
 		<div
 			data-testid="session-rename-row"
-			className="relative mb-0.5 flex w-full items-center rounded-lg bg-accent px-3 py-2"
+			className="relative mb-0.5 flex w-full items-center rounded-lg bg-accent px-3 py-2 pointer-coarse:min-h-11"
 		>
 			{/* NOTHING MOVES (owner, polish round): an idle row renders no
 			    status spacer (SessionStatus is null when not busy), so the
@@ -379,7 +433,7 @@ export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
 function SessionsSidebar() {
-	const { open, toggle } = useSidebar();
+	const { open, toggle, close, compact } = useSidebar();
 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
 	const [query, setQuery] = useState("");
 	const [kindFilter, setKindFilter] = useState<SessionKindFilter>("all");
@@ -634,12 +688,60 @@ function SessionsSidebar() {
 		// freshness (S6) — no interval, nothing standing.
 	}, [open, pathname, refresh]);
 
+	// Phone drawer dismissals (mobile round 2026-10-26): a navigation closes
+	// the overlay (the lesson is the destination), and Escape claims the key
+	// before the page's dictation/abort chain can act behind the backdrop.
+	// Desktop's inline sidebar is untouched (compact is false there).
+	const openRef = useRef(open);
+	openRef.current = open;
+	useEffect(() => {
+		if (openRef.current && compact) close();
+	}, [pathname, compact, close]);
+	useEffect(() => {
+		if (!open || !compact) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			e.stopPropagation();
+			close();
+		};
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => window.removeEventListener("keydown", onKeyDown, true);
+	}, [open, compact, close]);
+
 	return (
-		<aside
-			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
-			aria-hidden={!open}
-		>
-			<div className="flex h-full w-72 flex-col border-r bg-background">
+		<>
+			{/* Compact-only scrim. Tapping it dismisses the drawer; it is not
+			    rendered on desktop, where the sidebar is inline. */}
+			{compact && open && (
+				<div
+					data-testid="sidebar-backdrop"
+					className="fixed inset-0 z-30 bg-black/60"
+					onClick={close}
+					aria-hidden="true"
+				/>
+			)}
+			<aside
+				className={cn(
+					"sidebar-motion shrink-0 overflow-hidden duration-200",
+					compact
+						? cn(
+								"fixed inset-y-0 left-0 z-40 w-72 overflow-visible",
+								open ? "translate-x-0" : "-translate-x-full",
+							)
+						: open
+							? "w-72"
+							: "w-0",
+				)}
+				aria-hidden={!open}
+			>
+				<div
+					className={cn(
+						"flex h-full w-72 flex-col border-r bg-background",
+						// The fixed drawer escapes the app frame's safe-area
+						// padding, so it pays the insets itself.
+						compact && "pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
+					)}
+				>
 				{/* LH wordmark — the owner's header; close toggle sits at the edge.
 				    Merged chrome (2026-09-17): in Electron this band is the
 				    window's drag surface and starts after the traffic lights
@@ -690,7 +792,7 @@ function SessionsSidebar() {
 						type="button"
 						data-testid="new-session"
 						onClick={() => void newSession()}
-						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
 					>
 						<PlusIcon className="size-3" />
 						Teaching
@@ -700,7 +802,7 @@ function SessionsSidebar() {
 						type="button"
 						data-testid="new-session-practice"
 						onClick={() => router.push("/chat/new?mode=practice")}
-						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
 					>
 						<DumbbellIcon className="size-3" />
 						Practice
@@ -762,7 +864,7 @@ function SessionsSidebar() {
 							}}
 							placeholder="Search…"
 							aria-label="Search sessions"
-							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60"
+							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60 pointer-coarse:h-10"
 						/>
 						<SearchIcon className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/70" />
 					</span>
@@ -784,7 +886,7 @@ function SessionsSidebar() {
 							data-testid={`kind-filter-${f}`}
 							onClick={() => setFilter(f)}
 							className={cn(
-								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors",
+								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors pointer-coarse:min-h-10",
 								kindFilter === f
 									? "bg-accent text-foreground"
 									: "text-muted-foreground hover:text-foreground",
@@ -844,7 +946,7 @@ function SessionsSidebar() {
 								type="button"
 								onClick={() => openSettings()}
 								data-testid="settings-entry"
-								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
 							>
 								<SettingsIcon className="size-3" />
 								Settings
@@ -877,7 +979,7 @@ function SessionsSidebar() {
 								setRenamingId(ctxChatId);
 								setCtxChatId(null);
 							}}
-							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent"
+							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent pointer-coarse:min-h-11"
 						>
 							Rename
 						</button>
@@ -899,7 +1001,7 @@ function SessionsSidebar() {
 								a.click();
 								a.remove();
 							}}
-							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent"
+							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent pointer-coarse:min-h-11"
 						>
 							Export as Markdown…
 						</button>
@@ -911,7 +1013,7 @@ function SessionsSidebar() {
 								if (target) setDeleting(target);
 								setCtxChatId(null);
 							}}
-							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
 						>
 							Delete…
 						</button>
@@ -928,6 +1030,7 @@ function SessionsSidebar() {
 					onDeleted={onDeleted}
 				/>
 			</aside>
+		</>
 	);
 }
 

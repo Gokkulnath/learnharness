@@ -32,6 +32,9 @@
 :root {
 	color-scheme: dark;
 	--radius: 8px;
+	/* The compact (phone) UI multiplier. Desktop 1; the ≤927px block below
+	   sets 0.8 for the browser shell. Electron is excluded there. */
+	--lh-ui-scale: 1;
 	--background: #141414;
 	--foreground: #e6e6e6;
 	--card: #1c1c1c;
@@ -56,12 +59,11 @@
 	   appearance settings vars. */
 	--lh-ink-strong: var(--foreground);
 	--lh-ink-italic: var(--foreground);
-	/* THE READING SIZE = the ladder's 16px rung (--text-lg). Can't be
-	   var()-linked: @theme inline inlines literals into utilities without
-	   emitting runtime vars — so this is the one documented duplication:
-	   change one, change both. (owner, typography round 4: snapped from
-	   the reskin's hand-tuned 16.5 to the ladder's 16.) */
-	--lh-prose-size: 16px;
+	/* THE READING SIZE = the ladder's 16px rung (--text-lg), multiplied by
+	   the compact UI scale. The media query below must override this token
+	   too: custom properties are computed where declared (html here), so
+	   changing --lh-ui-scale lower in the tree would not recompute it. */
+	--lh-prose-size: calc(16px * var(--lh-ui-scale));
 	--lh-prose-leading: 1.5;
 	/* Markdown heading weight (appearance settings; 900 = the Black cut). */
 	--lh-heading-weight: 900;
@@ -91,12 +93,11 @@
 	/* Same emphasis ruling as the block above: unset = text color. */
 	--lh-ink-strong: var(--foreground);
 	--lh-ink-italic: var(--foreground);
-	/* THE READING SIZE = the ladder's 16px rung (--text-lg). Can't be
-	   var()-linked: @theme inline inlines literals into utilities without
-	   emitting runtime vars — so this is the one documented duplication:
-	   change one, change both. (owner, typography round 4: snapped from
-	   the reskin's hand-tuned 16.5 to the ladder's 16.) */
-	--lh-prose-size: 16px;
+	/* THE READING SIZE = the ladder's 16px rung (--text-lg), multiplied by
+	   the compact UI scale. The media query below must override this token
+	   too: custom properties are computed where declared (html here), so
+	   changing --lh-ui-scale lower in the tree would not recompute it. */
+	--lh-prose-size: calc(16px * var(--lh-ui-scale));
 	--lh-prose-leading: 1.5;
 	/* Markdown heading weight (appearance settings; 900 = the Black cut). */
 	--lh-heading-weight: 900;
@@ -135,19 +136,22 @@
 	   toggle write a runtime --font-title no consumer ever read (owner, fix
 	   wave: toggle looked dead). Non-inline emits :root { --font-title: … }
 	   and the utility reads var(--font-title) — appearance overrides win. */
-	--text-xs: 11px;
+	/* Each size is multiplied by --lh-ui-scale (1 desktop, .8 phone-width
+	   browser). Tailwind keeps the calc() in the utility, so the scale is
+	   runtime-switchable without a rebuild. Line-heights stay unitless. */
+	--text-xs: calc(11px * var(--lh-ui-scale));
 	--text-xs--line-height: 1.4;
-	--text-sm: 12.5px;
+	--text-sm: calc(12.5px * var(--lh-ui-scale));
 	--text-sm--line-height: 1.4;
-	--text-base: 14px;
+	--text-base: calc(14px * var(--lh-ui-scale));
 	--text-base--line-height: 1.45;
-	--text-lg: 16px;
+	--text-lg: calc(16px * var(--lh-ui-scale));
 	--text-lg--line-height: 1.45;
-	--text-xl: 20px;
+	--text-xl: calc(20px * var(--lh-ui-scale));
 	--text-xl--line-height: 1.4;
-	--text-2xl: 25px;
+	--text-2xl: calc(25px * var(--lh-ui-scale));
 	--text-2xl--line-height: 1.3;
-	--text-3xl: 32px;
+	--text-3xl: calc(32px * var(--lh-ui-scale));
 	--text-3xl--line-height: 1.25;
 	/* Radii ladder — 4/8/12/16 multiples of the 4px base. */
 	--radius-sm: 4px;
@@ -183,6 +187,136 @@ body {
 	background: var(--color-background);
 	color: var(--color-foreground);
 	font-family: var(--font-ui);
+}
+
+/*
+ * Mobile / installed-app baseline (owner, mobile round 2026-10-26).
+ *
+ * Chrome Android pulls-to-refresh the document when a downward drag reaches
+ * the top; in a full-screen lesson that reload discards the composer and the
+ * scroll position. The app's own scrollers own their overscroll, so the
+ * document never rubber-bands. text-size-adjust stops Chrome's font boosting
+ * from rewriting the declared 16px type scale on wide paragraphs, and the
+ * tap highlight is suppressed because every surface carries its own active
+ * state (the app's "no browser chrome" rule).
+ */
+html {
+	background: var(--color-background);
+	overscroll-behavior-y: none;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+body {
+	-webkit-tap-highlight-color: transparent;
+	overscroll-behavior-y: none;
+}
+
+/*
+ * Chrome Android zooms the page when a focused form control's font is under
+ * 16px. Keep the declared type scale on pointer devices, but never let a
+ * settings field or the session search trigger a viewport zoom. max() keeps
+ * intentionally larger controls at their size.
+ */
+@media (pointer: coarse) {
+	input,
+	textarea,
+	select {
+		font-size: max(16px, 1em);
+	}
+}
+
+/*
+ * Phone density (owner, mobile round 2, 2026-10-26): below the drawer
+ * breakpoint the browser UI steps down to 80% — type, spacing, and the
+ * controls built from them. It is a variable scale, not a transform, so
+ * fixed drawers, safe-area insets, and scroll geometry keep their meaning.
+ *
+ * Electron is excluded: its window has its own zoom and it never takes the
+ * compact drawer path. The media query applies on the first paint (no
+ * post-hydration reflow), and the variables on <html> also reach portaled
+ * menus/dialogs.
+ */
+@media (max-width: 927px) {
+	html:not(.lh-electron) {
+		--lh-ui-scale: 0.8;
+		--spacing: calc(0.25rem * var(--lh-ui-scale));
+		--lh-prose-size: calc(16px * var(--lh-ui-scale));
+	}
+
+	/* Chrome Android zooms on focus below 16px. The .lh-input class would
+	   otherwise beat the plain element rule above and undo this floor. */
+	html:not(.lh-electron) :is(input, textarea, select, .lh-input) {
+		font-size: max(16px, 1em);
+	}
+
+	/*
+	 * Dock fit (owner, same round): the question sheet's old cap measured
+	 * the whole column but only applied it to the question/options area;
+	 * confidence + answer + stats could then push the shell's top under the
+	 * conversation's overflow clip. The overlay now takes at most the
+	 * conversation column, and exactly one row — the question/options
+	 * scroller — is flexible. Fixed rows stay reachable at every height.
+	 */
+	html:not(.lh-electron) .lh-dock-fit {
+		display: flex;
+		flex-direction: column;
+		max-height: 100%;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-gradient {
+		flex: 0 0 auto;
+		/* Must match GRADIENT_H in components/chat.tsx (96). */
+		height: 96px;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-block {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-stack {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-stack > :not(.lh-dock-shell) {
+		flex: 0 0 auto;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-shell {
+		display: flex;
+		flex: 0 1 auto;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-content {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-panel {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+
+	html:not(.lh-electron) .lh-dock-fit .lh-dock-fixed {
+		flex: 0 0 auto;
+	}
 }
 
 /* Teaching prose (the markdown renderer's container gets .lh-prose):

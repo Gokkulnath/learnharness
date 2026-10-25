@@ -1193,7 +1193,7 @@ export function Chat({
 		    chip) spans from the left sidebar's edge to the panel's edge. The
 		    dock overlays the column bottom (outside the scroller); a spacer in
 		    the transcript reserves its height. */}
-		<div className="flex h-dvh">
+		<div className="flex h-full">
 			<div className="flex min-w-0 flex-1 flex-col">
 				{/* The top bar is its own block (owner, top-fade round 4): in flow
 				    above the scroller on the plain page background — no gradient. Its
@@ -2262,10 +2262,15 @@ function DockOverlay({
 	});
 
 	return (
-		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
-			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-			<div ref={blockRef} className="relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
-				<div className={DOCK}>
+		<div
+			className={`lh-dock-overlay pointer-events-none absolute inset-x-0 bottom-0${
+				pending || practice ? " lh-dock-fit" : ""
+			}`}
+			style={{ right: sbInset }}
+		>
+			<div className="lh-dock-gradient h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
+			<div ref={blockRef} className="lh-dock-block relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
+				<div className={`${DOCK} lh-dock-stack`}>
 					{setupCta}
 					{/* The queued-steer indicator (owner spec 2026-10-03): quiet
 					    one-liners above the shell - right-aligned to where its corner
@@ -2293,11 +2298,11 @@ function DockOverlay({
 							claim={revealPending}
 						/>
 					)}
-					<div ref={shellRef} className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
+					<div ref={shellRef} className="lh-dock-shell pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
 						<div
 						ref={contentRef}
 						key={mode}
-						className={mode === initialModeRef.current ? undefined : "dock-variant"}
+						className={`lh-dock-content${mode === initialModeRef.current ? "" : " dock-variant"}`}
 					>
 							{pending ? (
 								<QuestionDock

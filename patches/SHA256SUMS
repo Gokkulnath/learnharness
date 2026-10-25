@@ -1,0 +1,4 @@
+712f5f2bab24733619fb3167fd25611f9c6d8d6381da8d9d7482bcfeb93705a1  patches/0001-core-barrel-browser-safe.patch
+235244d3f9a7a091c5c964c0ce6f75ae945ae32d2e8d12da58c4194dfda74621  patches/0002-termux-runit-service.patch
+75a80aa861ffbb37da9678019cff001fd22b37e6feddcf2e81fee6e48cb75e6e  patches/0003-mobile-pwa-shell.patch
+ce4cadb412872f19c6c866e22150d33950d15c5bbbcc53b14e03b1716b30de0b  patches/README.md

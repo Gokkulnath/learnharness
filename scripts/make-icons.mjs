@@ -4,6 +4,9 @@
 //
 //   build/icon.ico  — Windows (.ico with 16/24/32/48/64/128/256 PNG entries)
 //   build/icon.png  — Linux (512×512; AppImage/deb/desktop entry)
+//   public/icons/   — the installed-app set: 192/512 + a maskable 512
+//                     (Android crops maskable icons to its launcher shape;
+//                     the glyph sits inside the inner 70% safe zone)
 //
 // macOS does NOT come from here: build/icon.icon (the Icon Composer
 // document) is the mac source of truth, compiled by actool at package
@@ -15,7 +18,7 @@
 // edges than downsampling a raster. Committed outputs; rerun only when
 // the design changes: `node scripts/make-icons.mjs`.
 import { Resvg } from "@resvg/resvg-js";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,3 +56,21 @@ console.log(`build/icon.ico  ${ICO_SIZES.join("/")} — ${(ico.length / 1024).to
 const png512 = render(512);
 writeFileSync(path.join(root, "build", "icon.png"), png512);
 console.log(`build/icon.png  512×512 — ${(png512.length / 1024).toFixed(1)} KB`);
+
+// ---- public/icons: the installed-app (PWA) set --------------------------
+const pwaDir = path.join(root, "public", "icons");
+mkdirSync(pwaDir, { recursive: true });
+const writePwa = (name, png) => {
+	writeFileSync(path.join(pwaDir, name), png);
+	console.log(`public/icons/${name}  ${(png.length / 1024).toFixed(1)} KB`);
+};
+
+writePwa("icon-192.png", render(192));
+writePwa("icon-512.png", png512);
+
+// Maskable: Android may crop the icon to a circle/squircle from the inner
+// 80% safe zone. Draw the squircle at 70% of a 512 canvas, centered on the
+// app background, so no part of the mark is lost under the launcher shape.
+const maskableGlyph = render(358);
+const maskableSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" fill="#141414"/><image x="77" y="77" width="358" height="358" href="data:image/png;base64,${maskableGlyph.toString("base64")}"/></svg>`;
+writePwa("icon-maskable-512.png", new Resvg(maskableSvg).render(512, 512).asPng());

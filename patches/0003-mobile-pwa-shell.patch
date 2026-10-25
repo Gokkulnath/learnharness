@@ -1,0 +1,1653 @@
+diff --git a/app/globals.css b/app/globals.css
+index 5e61b68..b6f4d54 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -32,6 +32,9 @@
+ :root {
+ 	color-scheme: dark;
+ 	--radius: 8px;
++	/* The compact (phone) UI multiplier. Desktop 1; the ≤927px block below
++	   sets 0.8 for the browser shell. Electron is excluded there. */
++	--lh-ui-scale: 1;
+ 	--background: #141414;
+ 	--foreground: #e6e6e6;
+ 	--card: #1c1c1c;
+@@ -56,12 +59,11 @@
+ 	   appearance settings vars. */
+ 	--lh-ink-strong: var(--foreground);
+ 	--lh-ink-italic: var(--foreground);
+-	/* THE READING SIZE = the ladder's 16px rung (--text-lg). Can't be
+-	   var()-linked: @theme inline inlines literals into utilities without
+-	   emitting runtime vars — so this is the one documented duplication:
+-	   change one, change both. (owner, typography round 4: snapped from
+-	   the reskin's hand-tuned 16.5 to the ladder's 16.) */
+-	--lh-prose-size: 16px;
++	/* THE READING SIZE = the ladder's 16px rung (--text-lg), multiplied by
++	   the compact UI scale. The media query below must override this token
++	   too: custom properties are computed where declared (html here), so
++	   changing --lh-ui-scale lower in the tree would not recompute it. */
++	--lh-prose-size: calc(16px * var(--lh-ui-scale));
+ 	--lh-prose-leading: 1.5;
+ 	/* Markdown heading weight (appearance settings; 900 = the Black cut). */
+ 	--lh-heading-weight: 900;
+@@ -91,12 +93,11 @@
+ 	/* Same emphasis ruling as the block above: unset = text color. */
+ 	--lh-ink-strong: var(--foreground);
+ 	--lh-ink-italic: var(--foreground);
+-	/* THE READING SIZE = the ladder's 16px rung (--text-lg). Can't be
+-	   var()-linked: @theme inline inlines literals into utilities without
+-	   emitting runtime vars — so this is the one documented duplication:
+-	   change one, change both. (owner, typography round 4: snapped from
+-	   the reskin's hand-tuned 16.5 to the ladder's 16.) */
+-	--lh-prose-size: 16px;
++	/* THE READING SIZE = the ladder's 16px rung (--text-lg), multiplied by
++	   the compact UI scale. The media query below must override this token
++	   too: custom properties are computed where declared (html here), so
++	   changing --lh-ui-scale lower in the tree would not recompute it. */
++	--lh-prose-size: calc(16px * var(--lh-ui-scale));
+ 	--lh-prose-leading: 1.5;
+ 	/* Markdown heading weight (appearance settings; 900 = the Black cut). */
+ 	--lh-heading-weight: 900;
+@@ -135,19 +136,22 @@
+ 	   toggle write a runtime --font-title no consumer ever read (owner, fix
+ 	   wave: toggle looked dead). Non-inline emits :root { --font-title: … }
+ 	   and the utility reads var(--font-title) — appearance overrides win. */
+-	--text-xs: 11px;
++	/* Each size is multiplied by --lh-ui-scale (1 desktop, .8 phone-width
++	   browser). Tailwind keeps the calc() in the utility, so the scale is
++	   runtime-switchable without a rebuild. Line-heights stay unitless. */
++	--text-xs: calc(11px * var(--lh-ui-scale));
+ 	--text-xs--line-height: 1.4;
+-	--text-sm: 12.5px;
++	--text-sm: calc(12.5px * var(--lh-ui-scale));
+ 	--text-sm--line-height: 1.4;
+-	--text-base: 14px;
++	--text-base: calc(14px * var(--lh-ui-scale));
+ 	--text-base--line-height: 1.45;
+-	--text-lg: 16px;
++	--text-lg: calc(16px * var(--lh-ui-scale));
+ 	--text-lg--line-height: 1.45;
+-	--text-xl: 20px;
++	--text-xl: calc(20px * var(--lh-ui-scale));
+ 	--text-xl--line-height: 1.4;
+-	--text-2xl: 25px;
++	--text-2xl: calc(25px * var(--lh-ui-scale));
+ 	--text-2xl--line-height: 1.3;
+-	--text-3xl: 32px;
++	--text-3xl: calc(32px * var(--lh-ui-scale));
+ 	--text-3xl--line-height: 1.25;
+ 	/* Radii ladder — 4/8/12/16 multiples of the 4px base. */
+ 	--radius-sm: 4px;
+@@ -185,6 +189,136 @@ body {
+ 	font-family: var(--font-ui);
+ }
+ 
++/*
++ * Mobile / installed-app baseline (owner, mobile round 2026-10-26).
++ *
++ * Chrome Android pulls-to-refresh the document when a downward drag reaches
++ * the top; in a full-screen lesson that reload discards the composer and the
++ * scroll position. The app's own scrollers own their overscroll, so the
++ * document never rubber-bands. text-size-adjust stops Chrome's font boosting
++ * from rewriting the declared 16px type scale on wide paragraphs, and the
++ * tap highlight is suppressed because every surface carries its own active
++ * state (the app's "no browser chrome" rule).
++ */
++html {
++	background: var(--color-background);
++	overscroll-behavior-y: none;
++	-webkit-text-size-adjust: 100%;
++	text-size-adjust: 100%;
++}
++
++body {
++	-webkit-tap-highlight-color: transparent;
++	overscroll-behavior-y: none;
++}
++
++/*
++ * Chrome Android zooms the page when a focused form control's font is under
++ * 16px. Keep the declared type scale on pointer devices, but never let a
++ * settings field or the session search trigger a viewport zoom. max() keeps
++ * intentionally larger controls at their size.
++ */
++@media (pointer: coarse) {
++	input,
++	textarea,
++	select {
++		font-size: max(16px, 1em);
++	}
++}
++
++/*
++ * Phone density (owner, mobile round 2, 2026-10-26): below the drawer
++ * breakpoint the browser UI steps down to 80% — type, spacing, and the
++ * controls built from them. It is a variable scale, not a transform, so
++ * fixed drawers, safe-area insets, and scroll geometry keep their meaning.
++ *
++ * Electron is excluded: its window has its own zoom and it never takes the
++ * compact drawer path. The media query applies on the first paint (no
++ * post-hydration reflow), and the variables on <html> also reach portaled
++ * menus/dialogs.
++ */
++@media (max-width: 927px) {
++	html:not(.lh-electron) {
++		--lh-ui-scale: 0.8;
++		--spacing: calc(0.25rem * var(--lh-ui-scale));
++		--lh-prose-size: calc(16px * var(--lh-ui-scale));
++	}
++
++	/* Chrome Android zooms on focus below 16px. The .lh-input class would
++	   otherwise beat the plain element rule above and undo this floor. */
++	html:not(.lh-electron) :is(input, textarea, select, .lh-input) {
++		font-size: max(16px, 1em);
++	}
++
++	/*
++	 * Dock fit (owner, same round): the question sheet's old cap measured
++	 * the whole column but only applied it to the question/options area;
++	 * confidence + answer + stats could then push the shell's top under the
++	 * conversation's overflow clip. The overlay now takes at most the
++	 * conversation column, and exactly one row — the question/options
++	 * scroller — is flexible. Fixed rows stay reachable at every height.
++	 */
++	html:not(.lh-electron) .lh-dock-fit {
++		display: flex;
++		flex-direction: column;
++		max-height: 100%;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-gradient {
++		flex: 0 0 auto;
++		/* Must match GRADIENT_H in components/chat.tsx (96). */
++		height: 96px;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-block {
++		display: flex;
++		flex: 1 1 auto;
++		flex-direction: column;
++		min-height: 0;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-stack {
++		display: flex;
++		flex: 1 1 auto;
++		flex-direction: column;
++		min-height: 0;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-stack > :not(.lh-dock-shell) {
++		flex: 0 0 auto;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-shell {
++		display: flex;
++		flex: 0 1 auto;
++		flex-direction: column;
++		min-height: 0;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-content {
++		display: flex;
++		flex: 1 1 auto;
++		flex-direction: column;
++		min-height: 0;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-panel {
++		display: flex;
++		flex: 1 1 auto;
++		flex-direction: column;
++		min-height: 0;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-scroll {
++		flex: 1 1 auto;
++		min-height: 0;
++	}
++
++	html:not(.lh-electron) .lh-dock-fit .lh-dock-fixed {
++		flex: 0 0 auto;
++	}
++}
++
+ /* Teaching prose (the markdown renderer's container gets .lh-prose):
+    Source Sans 3 with the size/leading tokens; emphasis color bound to
+    the settings-ready tokens. */
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 2343a78..22c8a27 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -1,4 +1,4 @@
+-import type { Metadata } from "next";
++import type { Metadata, Viewport } from "next";
+ import { JetBrains_Mono, Source_Sans_3 } from "next/font/google";
+ import "katex/dist/katex.min.css";
+ import "./globals.css";
+@@ -6,6 +6,7 @@ import { AppShell, SidebarProvider } from "@/components/sidebar";
+ import { ActivityProvider } from "@/components/activity-dock";
+ import { ServerEventsProvider } from "@/components/server-events";
+ import { AppearanceProvider } from "@/components/settings/appearance";
++import { PwaRegister } from "@/components/pwa-register";
+ import UpdateBanner from "@/components/update-banner";
+ 
+ // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
+@@ -18,6 +19,22 @@ export const metadata: Metadata = {
+ 	description: "A teacher agent with a memory — sessions, quizzes, and a knowledge graph of what you know.",
+ };
+ 
++/*
++ * Installed-app viewport (owner, mobile round 2026-10-26). viewportFit=cover
++ * lets the app paint edge-to-edge behind the status/gesture bars; the app
++ * frame spends those insets explicitly (sidebar + page roots). resizes-content
++ * makes the on-screen keyboard shrink the layout viewport, so the composer
++ * rises with it instead of hiding underneath. themeColor matches the app
++ * background in the task switcher and in Chrome's UI.
++ */
++export const viewport: Viewport = {
++	width: "device-width",
++	initialScale: 1,
++	viewportFit: "cover",
++	interactiveWidget: "resizes-content",
++	themeColor: "#141414",
++};
++
+ export default function RootLayout({ children }: { children: React.ReactNode }) {
+ 	return (
+ 		<html lang="en" className={`dark ${ui.variable} ${prose.variable}`}>
+@@ -33,6 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode })
+ 					</SidebarProvider>
+ 				</AppearanceProvider>
+ 			</ServerEventsProvider>
++			{/* Installs the pass-through service worker in production builds
++			    (public/sw.js); renders nothing. */}
++			<PwaRegister />
+ 			{/* Auto-update banner (Wave C): fixed card, Electron-only pushes. */}
+ 			<UpdateBanner />
+ 		</body>
+diff --git a/app/manifest.ts b/app/manifest.ts
+new file mode 100644
+index 0000000..1f635bc
+--- /dev/null
++++ b/app/manifest.ts
+@@ -0,0 +1,30 @@
++import type { MetadataRoute } from "next";
++
++/*
++ * The installed-app shell (owner, mobile round 2026-10-26). Chrome on Android
++ * upgrades this manifest into a WebAPK: its own launcher icon, splash screen,
++ * task-switcher entry, and no URL bar. The service worker (public/sw.js) is a
++ * deliberate pass-through — installability without a cache, so a rebuilt
++ * server is never shadowed by stale assets.
++ *
++ * Secure-context caveat: installs work on http://localhost (trustworthy) and
++ * over HTTPS; a plain LAN address such as http://192.168.x.x is not installable.
++ */
++export default function manifest(): MetadataRoute.Manifest {
++	return {
++		name: "Learning Harness",
++		short_name: "LearnHarness",
++		description: "A teacher agent with a memory — sessions, quizzes, and a knowledge graph of what you know.",
++		start_url: "/",
++		scope: "/",
++		display: "standalone",
++		orientation: "any",
++		background_color: "#141414",
++		theme_color: "#141414",
++		icons: [
++			{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
++			{ src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
++			{ src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
++		],
++	};
++}
+diff --git a/components/chat.tsx b/components/chat.tsx
+index 4986f3f..fa03186 100644
+--- a/components/chat.tsx
++++ b/components/chat.tsx
+@@ -1193,7 +1193,7 @@ export function Chat({
+ 		    chip) spans from the left sidebar's edge to the panel's edge. The
+ 		    dock overlays the column bottom (outside the scroller); a spacer in
+ 		    the transcript reserves its height. */}
+-		<div className="flex h-dvh">
++		<div className="flex h-full">
+ 			<div className="flex min-w-0 flex-1 flex-col">
+ 				{/* The top bar is its own block (owner, top-fade round 4): in flow
+ 				    above the scroller on the plain page background — no gradient. Its
+@@ -2262,10 +2262,15 @@ function DockOverlay({
+ 	});
+ 
+ 	return (
+-		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
+-			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
+-			<div ref={blockRef} className="relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
+-				<div className={DOCK}>
++		<div
++			className={`lh-dock-overlay pointer-events-none absolute inset-x-0 bottom-0${
++				pending || practice ? " lh-dock-fit" : ""
++			}`}
++			style={{ right: sbInset }}
++		>
++			<div className="lh-dock-gradient h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
++			<div ref={blockRef} className="lh-dock-block relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
++				<div className={`${DOCK} lh-dock-stack`}>
+ 					{setupCta}
+ 					{/* The queued-steer indicator (owner spec 2026-10-03): quiet
+ 					    one-liners above the shell - right-aligned to where its corner
+@@ -2293,11 +2298,11 @@ function DockOverlay({
+ 							claim={revealPending}
+ 						/>
+ 					)}
+-					<div ref={shellRef} className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
++					<div ref={shellRef} className="lh-dock-shell pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
+ 						<div
+ 						ref={contentRef}
+ 						key={mode}
+-						className={mode === initialModeRef.current ? undefined : "dock-variant"}
++						className={`lh-dock-content${mode === initialModeRef.current ? "" : " dock-variant"}`}
+ 					>
+ 							{pending ? (
+ 								<QuestionDock
+diff --git a/components/composer.tsx b/components/composer.tsx
+index c5c7db4..a059b66 100644
+--- a/components/composer.tsx
++++ b/components/composer.tsx
+@@ -116,7 +116,7 @@ export function Composer({
+ 				placeholder={placeholder}
+ 				autoFocus={autoFocus}
+ 				rows={1}
+-				className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
++				className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground pointer-coarse:min-h-11"
+ 			/>
+ 			{/* The button follows the text (owner report 2026-10-03): while
+ 				 a turn runs WITH text typed it stays the SEND affordance
+@@ -137,7 +137,7 @@ export function Composer({
+ 						type="submit"
+ 						data-testid="next-problem-button"
+ 						aria-label="Next problem"
+-						className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-green-600 px-4 font-ui text-xs font-medium uppercase tracking-wide text-white transition-colors hover:bg-green-500"
++						className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-green-600 px-4 font-ui text-xs font-medium uppercase tracking-wide text-white transition-colors hover:bg-green-500 pointer-coarse:h-11"
+ 					>
+ 						Next problem
+ 						<ArrowRightIcon className="size-4" />
+@@ -148,7 +148,7 @@ export function Composer({
+ 						aria-label={busy && !canSend ? "Stop" : "Send"}
+ 						disabled={!busy && !canSend}
+ 						className={cn(
+-							"flex size-10 shrink-0 items-center justify-center rounded-[10px] transition-colors",
++							"flex size-10 shrink-0 items-center justify-center rounded-[10px] transition-colors pointer-coarse:size-11",
+ 							busy && !canSend
+ 								? "bg-secondary text-foreground hover:bg-accent"
+ 								: "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40",
+diff --git a/components/home.tsx b/components/home.tsx
+index 4b16d62..21ec3a8 100644
+--- a/components/home.tsx
++++ b/components/home.tsx
+@@ -157,7 +157,7 @@ export function Home({
+ 	};
+ 
+ 	return (
+-		<div className="relative h-dvh">
++		<div className="relative h-full">
+ 			{/* Window-drag strip (merged chrome, owner 2026-09-17): a dedicated
+ 			    mask element, deliberately FIRST in the DOM. Electron's app-region
+ 			    mask resolves by DOM order — a no-drag element subtracts only drag
+@@ -273,7 +273,7 @@ export function Home({
+ 						placeholder={mode === "practice" ? "What do you want to practice?" : "What do you want to learn?"}
+ 						autoFocus
+ 						rows={1}
+-						className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
++						className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground pointer-coarse:min-h-11"
+ 					/>
+ 					{/* No tooltip on the start square — the ↵ glyph is the
+ 					    affordance (owner, subtlety round 2026-09-25). */}
+@@ -281,7 +281,7 @@ export function Home({
+ 						type="submit"
+ 						aria-label="Start session"
+ 						disabled={(!topic.trim() && !dictation.active) || busy}
+-						className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40"
++						className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40 pointer-coarse:size-11"
+ 					>
+ 						<CornerDownLeftIcon className="size-5" />
+ 					</button>
+diff --git a/components/md-blocks.tsx b/components/md-blocks.tsx
+index 6efec14..311f879 100644
+--- a/components/md-blocks.tsx
++++ b/components/md-blocks.tsx
+@@ -101,7 +101,7 @@ export function CopyCorner({
+ 				type="button"
+ 				aria-label={label}
+ 				data-testid="md-copy"
+-				className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/md:opacity-100"
++				className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/md:opacity-100 pointer-coarse:opacity-100"
+ 				onClick={(e) => {
+ 					blurAfterPointerClick(e);
+ 					void copyText(getText()).then((ok) => {
+@@ -211,7 +211,7 @@ function MermaidInline({ chart }: { chart: string }) {
+ 						type="button"
+ 						aria-label="Expand diagram"
+ 						data-testid="md-mermaid-expand"
+-												className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/md:opacity-100"
++												className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/md:opacity-100 pointer-coarse:opacity-100"
+ 						onClick={(e) => {
+ 							blurAfterPointerClick(e);
+ 							overlay.openMermaid(chart);
+diff --git a/components/new-session.tsx b/components/new-session.tsx
+index c2a0930..2780333 100644
+--- a/components/new-session.tsx
++++ b/components/new-session.tsx
+@@ -158,7 +158,7 @@ export function DraftShell({
+ 		 * (the only pointer-events-auto spot), the empty state carrying the
+ 		 * orientation. The chain picker then owns the column top exactly
+ 		 * like the graph view's — no stacked bars. */
+-		<div className="relative flex h-dvh">
++		<div className="relative flex h-full">
+ 			{/* Window-drag strip — deliberately FIRST in the DOM (the mask
+ 			    law: no-drag subtraction resolves by DOM order, so every
+ 			    carved control later in the tree subtracts correctly). */}
+diff --git a/components/practice-dock.tsx b/components/practice-dock.tsx
+index e24f4f4..2ca8773 100644
+--- a/components/practice-dock.tsx
++++ b/components/practice-dock.tsx
+@@ -101,12 +101,12 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
+ 
+ 	/* ── the expanded form ── */
+ 	return (
+-		<div data-testid="practice-dock" data-problem={problemCallId}>
++		<div data-testid="practice-dock" data-problem={problemCallId} className="lh-dock-panel">
+ 			{/* The agent's half: the 'Problem' eyebrow (mirroring the quiz
+ 			    cards' label row — owner round, 2026-10-05) + the statement,
+ 			    markdown + LaTeX rendered, capped by the measured column
+ 			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
+-			<div className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
++			<div className="lh-dock-scroll max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
+ 				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+ 				<div className="lh-prose text-[15px]">
+ 					<MessageResponse>{typeof input.statement === "string" ? repairMathForDisplay(input.statement) : input.statement}</MessageResponse>
+@@ -117,7 +117,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
+ 			    Shift+Enter makes a newline — less to decide about. */}
+ 			<div
+ 				data-testid="practice-thinking-field"
+-				className="m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
++				className="lh-dock-fixed m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
+ 			>
+ 				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+ 					YOUR THINKING
+diff --git a/components/pwa-register.tsx b/components/pwa-register.tsx
+new file mode 100644
+index 0000000..eb2e3e4
+--- /dev/null
++++ b/components/pwa-register.tsx
+@@ -0,0 +1,31 @@
++"use client";
++
++import { useEffect } from "react";
++
++/**
++ * Registers the installed-app service worker (public/sw.js) after load.
++ *
++ * Production only: a dev server's module URLs are not content-hashed the way
++ * build output is, and this component must never leave a worker behind that
++ * could confuse a later build. The worker itself is a pass-through — it
++ * exists for installability, not offline caching.
++ */
++export function PwaRegister() {
++	useEffect(() => {
++		if (process.env.NODE_ENV !== "production") return;
++		if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
++
++		const register = () => {
++			void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
++				// Installability is a bonus: a failed registration must never
++				// surface as an app error.
++			});
++		};
++
++		if (document.readyState === "complete") register();
++		else window.addEventListener("load", register, { once: true });
++		return () => window.removeEventListener("load", register);
++	}, []);
++
++	return null;
++}
+diff --git a/components/question-dock.tsx b/components/question-dock.tsx
+index 3b6f848..0dda652 100644
+--- a/components/question-dock.tsx
++++ b/components/question-dock.tsx
+@@ -147,7 +147,7 @@ export function QuestionDock({
+ 					}
+ 				/>
+ 			)}
+-			<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
++			<div className={expanded ? "lh-dock-panel dock-variant" : "invisible h-0 overflow-hidden"}>
+ 				<QuestionDockForm
+ 					toolName={toolName}
+ 					toolCallId={toolCallId}
+@@ -207,7 +207,7 @@ export function QuestionDockBar({
+ 				type="button"
+ 				data-testid="teach-check-reveal"
+ 				onClick={onExpand}
+-				className="dock-variant flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
++				className="dock-variant flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 pointer-coarse:min-h-11"
+ 			>
+ 				<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+ 					<PlayIcon className="size-3.5" />
+@@ -227,7 +227,7 @@ export function QuestionDockBar({
+ 			type="button"
+ 			data-testid="question-dock-bar"
+ 			onClick={onExpand}
+-			className="dock-variant flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/40"
++			className="dock-variant flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/40 pointer-coarse:min-h-11"
+ 		>
+ 			<span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+ 				{label ??
+@@ -540,11 +540,11 @@ function QuestionDockForm({
+ 	}, [kbdIdx]);
+ 
+ 	return (
+-		<div ref={rootRef} data-testid="question-dock">
++		<div ref={rootRef} data-testid="question-dock" className="lh-dock-panel">
+ 			{/* Question area — scrolls internally if very tall; the bottom row stays put.
+ 			    Capped by the measured column (--dock-max-h; the old fixed 55dvh cut
+ 			    long questions short — owner round, 2026-10-05). */}
+-			<div data-session-find-root="" className="max-h-[var(--dock-max-h,55dvh)] overflow-y-auto px-4 pt-3">
++			<div data-session-find-root="" className="lh-dock-scroll max-h-[var(--dock-max-h,55dvh)] overflow-y-auto px-4 pt-3">
+ 				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+ 					{toolName === "probe"
+ 						? "Probe"
+@@ -581,7 +581,7 @@ function QuestionDockForm({
+ 									data-kbdrow={i}
+ 									onClick={() => toggle(i)}
+ 									className={cn(
+-										"flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm outline-none transition-colors",
++										"flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm outline-none transition-colors pointer-coarse:min-h-11",
+ 										isSel ? "border-primary bg-accent" : "hover:bg-accent/50",
+ 										i === kbdIdx && !isSel && "ring-1 ring-border bg-accent/40",
+ 									)}
+@@ -734,7 +734,7 @@ function QuestionDockForm({
+ 				GRAYS it out — the layout holds, no value is sent, the IDK
+ 				signal stands alone. */}
+ 			{kind === "quiz" && (
+-				<div className="border-t border-border/60 px-4 py-2.5">
++				<div className="lh-dock-fixed border-t border-border/60 px-4 py-2.5">
+ 					<div className="flex items-center gap-3">
+ 						<span
+ 							className={cn(
+@@ -817,7 +817,7 @@ function QuestionDockForm({
+ 			    is for dumping, soon dictated; the button submits); text mode
+ 			    keeps "Your answer" with Enter-to-submit. */}
+ 			<form
+-				className="border-t border-border/60 p-1.5"
++				className="lh-dock-fixed border-t border-border/60 p-1.5"
+ 				onSubmit={(e) => {
+ 					e.preventDefault();
+ 					submit();
+@@ -901,7 +901,7 @@ function QuestionDockForm({
+ 						<Button
+ 							type="submit"
+ 							disabled={!canSubmit || compactionRunning}
+-							className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
++							className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium pointer-coarse:h-11"
+ 						>
+ 							Submit answer
+ 						</Button>
+diff --git a/components/sidebar.tsx b/components/sidebar.tsx
+index d853f5c..cc603e7 100644
+--- a/components/sidebar.tsx
++++ b/components/sidebar.tsx
+@@ -51,6 +51,16 @@ const STORAGE_KEY = "lh:sidebar-open";
+ import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
+ const SIDEBAR_AUTOCLOSE = 928;
+ 
++/* The browser's compact breakpoint. Below this a 288px inline sidebar leaves
++ * a phone with ~124px of lesson, so the browser (unlike Electron, which owns
++ * a window and widens it) turns the sidebar into an overlay drawer. Same
++ * number as SIDEBAR_AUTOCLOSE: 640px content floor + 288px sidebar. */
++const COMPACT_QUERY = `(max-width: ${SIDEBAR_AUTOCLOSE - 1}px)`;
++
++function isCompactViewport() {
++	return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(COMPACT_QUERY).matches;
++}
++
+ // Module scope, guarded for SSR (the server has no navigator).
+ const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+ 
+@@ -73,9 +83,11 @@ declare global {
+ 	}
+ }
+ 
+-const SidebarContext = createContext<{ open: boolean; toggle: () => void }>({
++const SidebarContext = createContext<{ open: boolean; toggle: () => void; close: () => void; compact: boolean }>({
+ 	open: false,
+ 	toggle: () => {},
++	close: () => {},
++	compact: false,
+ });
+ 
+ export function useSidebar() {
+@@ -94,6 +106,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
+ 	// mismatch); the stored value is applied after mount.
+ 	const [open, setOpen] = useState(false);
+ 	const [narrow, setNarrow] = useState(false);
++	// Browser-only overlay mode (<928px). Electron keeps its own narrow
++	// behavior (auto-close + expand the window), so this stays false there.
++	const [compact, setCompact] = useState(false);
+ 	const [mounted, setMounted] = useState(false);
+ 
+ 	useEffect(() => {
+@@ -118,12 +133,35 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
+ 		void window.lh?.getZoom?.().then(setZoomVar);
+ 
+ 		const stored = localStorage.getItem(STORAGE_KEY);
+-		// Default: open (first run introduces the sidebar).
+-		setOpen(stored === null ? true : stored === "1");
++		// Default: open on desktop (first run introduces the sidebar). A phone
++		// starts closed: the persisted desktop preference must not push a
++		// 288px drawer (plus backdrop) over the lesson on every load. Electron
++		// keeps its own narrow-window behavior (expand-to-restore), so it
++		// always honors the persisted preference here.
++		setOpen((IS_ELECTRON || !isCompactViewport()) && (stored === null || stored === "1"));
+ 		setMounted(true);
+ 		return () => off?.();
+ 	}, []);
+ 
++	// Browser compact breakpoint: below it the sidebar is an overlay drawer
++	// (fixed, translate-x) instead of an inline 288px column. Entering the
++	// compact range closes it; leaving it restores the persisted desktop
++	// preference. Electron never takes this path (its window is widened).
++	useEffect(() => {
++		if (IS_ELECTRON) return;
++		if (typeof window.matchMedia !== "function") return;
++		const mq = window.matchMedia(COMPACT_QUERY);
++		const sync = (matches: boolean) => {
++			setCompact(matches);
++			if (matches) setOpen(false);
++			else setOpen(localStorage.getItem(STORAGE_KEY) !== "0");
++		};
++		sync(mq.matches);
++		const onChange = (e: MediaQueryListEvent) => sync(e.matches);
++		mq.addEventListener("change", onChange);
++		return () => mq.removeEventListener("change", onChange);
++	}, []);
++
+ 	// Narrow-window auto-close/auto-restore (see SIDEBAR_AUTOCLOSE note):
+ 	// fires only on actual resizes — a boolean compare, no layout work.
+ 	// Both this and the mount effect land before the first paint, so a
+@@ -149,10 +187,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
+ 			return;
+ 		}
+ 		setOpen((v) => {
+-			localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
++			// The compact drawer is transient — opening it on a phone must not
++			// rewrite the desktop preference (default open / closed at ≥928px).
++			if (!compact) localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
+ 			return !v;
+ 		});
+-	}, [narrow, open]);
++	}, [narrow, open, compact]);
++
++	// Dismissals that do NOT touch the preference: backdrop tap, Escape,
++	// navigation on a phone.
++	const close = useCallback(() => setOpen(false), []);
+ 
+ 	// ⌘B: the global shortcut dispatches kbdEventForAction("toggle-sidebar")
+ 	// and the context answers on exactly that name — the shared spelling
+@@ -168,9 +212,19 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
+ 	}, [toggle]);
+ 
+ 	return (
+-		<SidebarContext.Provider value={{ open: open && !narrow, toggle }}>
+-			{/* transitions gated on mount: no slide-in flash on page load */}
+-			<div className={cn("flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
++		<SidebarContext.Provider value={{ open: open && !narrow, toggle, close, compact }}>
++			{/* The safe-area insets are spent once, here, so every page root
++			    (h-full) lives inside the status/gesture bars in an installed
++			    app. The compact drawer is fixed and escapes this padding, so
++			    it pays its own insets inside the panel. */}
++			<div
++				className={cn(
++					"flex h-dvh pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
++					mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity,transform]",
++				)}
++			>
++				{children}
++			</div>
+ 		</SidebarContext.Provider>
+ 	);
+ }
+@@ -192,8 +246,8 @@ export function SidebarToggle() {
+ 	return (
+ 		<span
+ 			className={cn(
+-				"sidebar-motion lh-no-drag relative flex h-9 shrink-0 overflow-hidden duration-200",
+-				open ? "w-0 -mr-3" : "w-9 mr-0 lh-closed-toggle",
++				"sidebar-motion lh-no-drag relative flex h-9 shrink-0 overflow-hidden duration-200 pointer-coarse:h-11",
++				open ? "w-0 -mr-3" : "w-9 mr-0 lh-closed-toggle pointer-coarse:w-11",
+ 			)}
+ 		>
+ 			<Hint label="Open sidebar" action="toggle-sidebar">
+@@ -297,7 +351,7 @@ export function SessionRow({
+ 			onContextMenu={onContextMenu}
+ 			data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
+ 			className={cn(
+-				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
++				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent pointer-coarse:min-h-11",
+ 				active && "bg-accent",
+ 				kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
+ 			)}
+@@ -339,7 +393,7 @@ export function RenameRow({ chat, onCommit, onCancel }: { chat: ChatListItem; on
+ 	return (
+ 		<div
+ 			data-testid="session-rename-row"
+-			className="relative mb-0.5 flex w-full items-center rounded-lg bg-accent px-3 py-2"
++			className="relative mb-0.5 flex w-full items-center rounded-lg bg-accent px-3 py-2 pointer-coarse:min-h-11"
+ 		>
+ 			{/* NOTHING MOVES (owner, polish round): an idle row renders no
+ 			    status spacer (SessionStatus is null when not busy), so the
+@@ -379,7 +433,7 @@ export type SessionKindFilter = "teach" | "all" | "practice";
+ const KIND_FILTER_KEY = "lh:session-kind-filter";
+ 
+ function SessionsSidebar() {
+-	const { open, toggle } = useSidebar();
++	const { open, toggle, close, compact } = useSidebar();
+ 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
+ 	const [query, setQuery] = useState("");
+ 	const [kindFilter, setKindFilter] = useState<SessionKindFilter>("all");
+@@ -634,12 +688,60 @@ function SessionsSidebar() {
+ 		// freshness (S6) — no interval, nothing standing.
+ 	}, [open, pathname, refresh]);
+ 
++	// Phone drawer dismissals (mobile round 2026-10-26): a navigation closes
++	// the overlay (the lesson is the destination), and Escape claims the key
++	// before the page's dictation/abort chain can act behind the backdrop.
++	// Desktop's inline sidebar is untouched (compact is false there).
++	const openRef = useRef(open);
++	openRef.current = open;
++	useEffect(() => {
++		if (openRef.current && compact) close();
++	}, [pathname, compact, close]);
++	useEffect(() => {
++		if (!open || !compact) return;
++		const onKeyDown = (e: KeyboardEvent) => {
++			if (e.key !== "Escape") return;
++			e.stopPropagation();
++			close();
++		};
++		window.addEventListener("keydown", onKeyDown, true);
++		return () => window.removeEventListener("keydown", onKeyDown, true);
++	}, [open, compact, close]);
++
+ 	return (
+-		<aside
+-			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
+-			aria-hidden={!open}
+-		>
+-			<div className="flex h-full w-72 flex-col border-r bg-background">
++		<>
++			{/* Compact-only scrim. Tapping it dismisses the drawer; it is not
++			    rendered on desktop, where the sidebar is inline. */}
++			{compact && open && (
++				<div
++					data-testid="sidebar-backdrop"
++					className="fixed inset-0 z-30 bg-black/60"
++					onClick={close}
++					aria-hidden="true"
++				/>
++			)}
++			<aside
++				className={cn(
++					"sidebar-motion shrink-0 overflow-hidden duration-200",
++					compact
++						? cn(
++								"fixed inset-y-0 left-0 z-40 w-72 overflow-visible",
++								open ? "translate-x-0" : "-translate-x-full",
++							)
++						: open
++							? "w-72"
++							: "w-0",
++				)}
++				aria-hidden={!open}
++			>
++				<div
++					className={cn(
++						"flex h-full w-72 flex-col border-r bg-background",
++						// The fixed drawer escapes the app frame's safe-area
++						// padding, so it pays the insets itself.
++						compact && "pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
++					)}
++				>
+ 				{/* LH wordmark — the owner's header; close toggle sits at the edge.
+ 				    Merged chrome (2026-09-17): in Electron this band is the
+ 				    window's drag surface and starts after the traffic lights
+@@ -690,7 +792,7 @@ function SessionsSidebar() {
+ 						type="button"
+ 						data-testid="new-session"
+ 						onClick={() => void newSession()}
+-						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
++						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
+ 					>
+ 						<PlusIcon className="size-3" />
+ 						Teaching
+@@ -700,7 +802,7 @@ function SessionsSidebar() {
+ 						type="button"
+ 						data-testid="new-session-practice"
+ 						onClick={() => router.push("/chat/new?mode=practice")}
+-						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
++						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
+ 					>
+ 						<DumbbellIcon className="size-3" />
+ 						Practice
+@@ -762,7 +864,7 @@ function SessionsSidebar() {
+ 							}}
+ 							placeholder="Search…"
+ 							aria-label="Search sessions"
+-							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60"
++							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60 pointer-coarse:h-10"
+ 						/>
+ 						<SearchIcon className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/70" />
+ 					</span>
+@@ -784,7 +886,7 @@ function SessionsSidebar() {
+ 							data-testid={`kind-filter-${f}`}
+ 							onClick={() => setFilter(f)}
+ 							className={cn(
+-								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors",
++								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors pointer-coarse:min-h-10",
+ 								kindFilter === f
+ 									? "bg-accent text-foreground"
+ 									: "text-muted-foreground hover:text-foreground",
+@@ -844,7 +946,7 @@ function SessionsSidebar() {
+ 								type="button"
+ 								onClick={() => openSettings()}
+ 								data-testid="settings-entry"
+-								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
++								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
+ 							>
+ 								<SettingsIcon className="size-3" />
+ 								Settings
+@@ -877,7 +979,7 @@ function SessionsSidebar() {
+ 								setRenamingId(ctxChatId);
+ 								setCtxChatId(null);
+ 							}}
+-							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent"
++							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent pointer-coarse:min-h-11"
+ 						>
+ 							Rename
+ 						</button>
+@@ -899,7 +1001,7 @@ function SessionsSidebar() {
+ 								a.click();
+ 								a.remove();
+ 							}}
+-							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent"
++							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-foreground transition-colors hover:bg-accent pointer-coarse:min-h-11"
+ 						>
+ 							Export as Markdown…
+ 						</button>
+@@ -911,7 +1013,7 @@ function SessionsSidebar() {
+ 								if (target) setDeleting(target);
+ 								setCtxChatId(null);
+ 							}}
+-							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
++							className="flex items-center rounded-lg px-2.5 py-1.5 text-left text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground pointer-coarse:min-h-11"
+ 						>
+ 							Delete…
+ 						</button>
+@@ -928,6 +1030,7 @@ function SessionsSidebar() {
+ 					onDeleted={onDeleted}
+ 				/>
+ 			</aside>
++		</>
+ 	);
+ }
+ 
+diff --git a/components/ui/button.tsx b/components/ui/button.tsx
+index 4d38506..bea9bdc 100644
+--- a/components/ui/button.tsx
++++ b/components/ui/button.tsx
+@@ -25,10 +25,10 @@ const buttonVariants = cva(
+         xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+         sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
+         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+-        icon: "size-9",
++        icon: "size-9 pointer-coarse:size-11",
+         "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
+         "icon-sm": "size-8",
+-        "icon-lg": "size-10",
++        "icon-lg": "size-10 pointer-coarse:size-11",
+       },
+     },
+     defaultVariants: {
+diff --git a/public/icons/icon-192.png b/public/icons/icon-192.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..26f8e80860b7f8ba0925581065932ce9f41117fe
+GIT binary patch
+literal 6222
+zcmX9@c|6q5|9|gVEID>rtoy#NB}XCFom=iJEXf%P5prM2qNGrE9iLFHMY-iz=@Ki1
+z<VxkfBIjDa?fd&<X8xF&$Gqk>uh-1;`J8*!md4DCJd6MUFq>R9u%Wg+{|c0jTHAaN
+zq6YvZhlzo%UDUIUVv8)qIOn?%qF4di)4abx=#9w3c|9K-q^y--q#h@iklzj~Vs6*H
+zbB~8zMU6qs$YNHC*GHdKVJx4h7cOigM}`{A&Kv&#>q$RE3M~X)76UDvo~hbSo*%s$
+zQC%54-Zj4T#BFuI^T~zLyObqd*k)Tx;77RD@R}emud8$Qc<0W}O)JpgiIQN?p2S9+
+z#7~;p=_{QrTuNOgYs0^XiZ!Db2e9|gamrl~NW<)%pMHUHddnaAePO{O7BULzY@mrs
+zJ~`?S>{Z&H!v1LLcrWRmttXUzM&2E^b~ac6Z_iKFyLYv-*b0Vxjn+C*N?Fy@&6?*P
+z#OuVzPstiegSREH0(2gZs95nmWe{XU&WtIQ(NnqePFQT;HZ6t`0q*;c-!RQ26*}KM
+z9lV=w6XJDf3j4zF$VPJruOlc$L~;O^D1X-`4!l-nb>9zN_VAdCH?M;lLFO&`4@0tZ
+zazcn^x&<6iY+A19I_iPwPX!=N^Dy-w+v@8otuU*nt#D94*evEs9oVTeYA1fjESP8q
+z%L0U%iZvrQbqap#DNs$+!|5+JV#E=E0V*@s50#Va_Z6HlA(*fr*!N0MAC{TK8<6b8
+zY^1bR<jepJc%<)~agD|?=}Hyd5Bohh6}!Ja1t07v3j~?-oVlCRmf8{6f(A@Uc2`OH
+zK>s1_^s)n_kXC3wagwpGl-ZeBY7S1=G3%3^H2>Z2<O&Fw7JGYpSE4rF!62>+iO+o6
+z#cghYdQQ$*XX61|T>?)HxZH`Bg7ueiq0VFNJ@n|agFOR8qF6;H)BHtVfIUNUY*t}u
+z);GV_U9IMnclmF#>%hG;U|4-Fww!Xf$oltWt9vp3FH^-|7IDTN{qOOASMAfZacnYg
+zuSU*17l<d{{JTwLHBL^$=i}p!P41p-v^<bH><nLFiwj_NqU}4{T{_d07QBo|NYNfo
+zGCJEEwW{{T-H|9-`kY8ZKgQ(|TdIBZlfAQ%CPPRGu_~4Dfhbpr;^0dcpyWHc-@_U9
+z<R^$sHu>gol-f{_uhB9+K!XuzI1|>26~FK)&r176bI_Dc!9vU8Vvdf()|->yDLtgF
+z0s%D4{fYy~nsa=3sBw<?^k6Q&+m0BLD%&?5(#>BB75}0pyeS6obk{?cJgau85gD03
+zR+MJ4dtdQQRUGBWw^QaB07mwQF{)-sUtZsmP&r&!zyx;2u}!yxDEg@SJvlcB17vh8
+z?BdigG8e#W`=X+v51?*|ZN0o9o$yp+!^BJyN=7eYybl42syfNRVz2htg+e6SvkrW{
+z$xjqLvICBoEH3yxs<gu69=6(CBZq8%;7fjb{n;>GngOp`PzEK2R;k>|FB6zQUE8L_
+zC~@%3Px<1pS>3#T^EFeW?4!#aiAf~@KI+Fkzi|B#kscWWcQxA9LfH^_NN(3}8L;y9
+zC0h`O*)tPAsK4t=J-5Stmyxsg(Y4kzxbTO1P1N3n@MYNbW71;COuH&$gt?w@=kaRw
+z2t}VW69MWgaa}|$R{&z<n>0M}UsDc>BWJG&#vNjW2RMjxVF#NtBeq<1rgC{j6{<|_
+z(m;xiXjBamcHJaCK3+v@*tY*^?Ch;i@^1c0fmX=0m-(=IMfXl578b^H>WjZyvDvYu
+zO|D--wav8NEWcTg@2|Vsp<GK>-%W`YbI3yjL>T&NB99RS5(>(RV-lumxDtb_?EHYq
+zOc#j0d}+Ifrr<fzDgN~MZ))_Z<+aa_boBJ)b8|vm59q&VR=&h+(>yxVq1oF!_#T$S
+zgGA29q~i;GKRgtFpu2`%TsWJcTg<_{&JccJnKT$XKVmHSc93tU!buFccQ#sD8iRAJ
+z8fp3SJ#5&YI|n-;s1FZqaiJeAh4qzuh9(!O4oU+nCtCnBrI%h%?(MR-L%n<L*Ba+!
+zXJs|s_^jXy{oRSx=(X!^I5aSFG4V2xaYpleOcV+Bbh9e2+&TYUI`7WzZ^K#quvo!%
+zookB%TjIvD#DJD<&zD+Z7E#u1QIIF?e8W4Cc?=Iv$JWV%h3TZa1K*=u9|OmE?KI1K
+z;o~pujT}HVz{qF#1AqX|S{!NW7r-Znxt2^!>`=6F%(k}JRN^v)m^U%oa)}HC@K`{`
+zjhJ?@LC7$1!4Rqal4X_Z=)Rishg!iDg&LJh`;*=U;@%(4ii{)?UJ8WRqg#W2(lz^3
+zqvAa<hJDM@etzc2qd|6_C}i4$hA^7@qWx<%))0@ofAd`$ylCAc211_&A%fTWHE+wk
+zZudcT^417bw%XXLwoX32dw<^}{#2DmB|2Nn^V1Hi4mrVDxi0z)xzD_VaAjL}`IUWp
+zc3b&s9l)%*!~Z5f-9(`tQdm1t`J}QpECqw?8sfcezxln5y=ka*{nWda@!5r&;HGOx
+zIwii3h5VO90g2W(TgIh^Eu@b4v(tls@Nh)^U}O9lWtn8c_Ehag=H`!^#dlBkpW`G^
+zdo7!u&@lt(D+WcGbKZ9)I%f2em!Jz9_rc;C<Z13^^|gK4sqCTO$YIpB+)Z2w;#j~j
+z0c{`7o;CZ%y*`rv4{14BD1&WEWTE$VvzFwQ)NM&4Nhakn!SL2baDhdqVBcu`(XS_0
+z-rLe?>~!~jyeu7Rl@LQ?BIMHB-DYC}A}z0Nlifg#Xe%qC?=4pejePh-wa)0s6gz5L
+z-O&n|;nB&P7J_Ekg*TSv0leF3&&!%tm7aV$3LVBs^i~eY-a5UbK46vXtHqyI+L)>W
+zA}nCjjb5f$&gMnBLLSavsRI@ZG_BMJhON^>Gz>l2zXOX#PLgixrzYi0pj=aE3GX5+
+zY!iZ1d*}eJEdwrpo0A9o(O@a5T<#e!wcAOfgnoZn|FoXmS{ZSY!xu_09L>ABO~x%r
+z^CMSPo__xF@oD>i+(|XS(ZVZWa$t~?p5IL=?$)25ANpB7$S@{cWDUcM836Kx*NHw#
+z{BFu|4;^S<mH}c6L+Ho<O{gwP`hz_k#X3Z*Q--i`37#L%5I~+gHBPy(_-zVb^G&hD
+zQ(m$wfB5b0wjWEK@ZUHfcFs{djm6F8M%{jRnVh#2d+}pG_OeJ*KrSM9x|z8teDYh*
+z8v!n9Spfz1+sTcxuh=WTbr-Xt`EPbF-I2kfnCzRT?CSLNOLWCBRhL>3le8a$Nn+;w
+z_rr|<xyZ)#Lb^ptX=&;5in0on$B2!tUDQmsl6}nXq=g;q`8vIn74NUIa70Ae)s=fA
+z>=}|<zug=+>w7d=3`_VI+?SIXLR{9@88v)#c_7S0pYUw`qRg{<f5HFDM5a40VaKof
+zG{YV%T+MX$HBY58?49x01WRK6RQRpY&J%Y}kp2YStc}n1dXh}H?r@Nte?iZ*Da8^5
+z7hvyLV^)Vrf81c*Lv@*ZMR+t+iOX~F?C*q!alAKM#k6(}=l`2f&alWToFr4$q}%@$
+z`q;qYjtTp6&^~;WH_qYQ{ObvKv%eI3)7a_KCTSzLZ(O9)r{*#7UbR4Y$ECu<KWgbR
+zd0+Xsh}Q~C8a|`;Fi!7$dB|jo=zk+tc{<+MA5fIC^88gatN}z4mb4tv{d;_DXe+!1
+zkq|sQOfMKa?^fyCvOF-@Zv?-l6c;zc9?~TxQrTbw1l{pm(`QqOWh`+l0o{CU7MPRK
+zU;-h}L}2j<=kZ1xV2|QP`>;d_1z8pMBM;I)%r<M*16f0T`sNBXyV?gl41P>!Mu1Be
+zYyp$dmM0$+@m*<_YiQXTmhlHx9B@nX^rulwGp*p|9#XnItK1rAY6RGGnFy0&h>oiR
+zx-y6EH8}WL2Z?+7U4fW?leT%R8Bw}3y1V<eL!`kHh=`I^e12^EwmH4#8V6`W1`Xdn
+zJr80&`}M>l+u=nG;>w?(bbIi81($mF7e5sqQ<CO+5({IZ$RQQKlph5xSgIPUr&$$L
+zqCBK&sv$k~v=+Modt~x<3PZayg9|3Rr%1DFOR<~GmTKlt8V&Q#PG-K*u0#n(?h{6v
+z<Q63z7<vxw{_+;<4SS=tB}*m-8Il-jNj&Mh5kd1c+A9uWUrKhKz;~_Q$$-XGf5bb)
+zznncLF*E5zb!%hCZu{+ZE=uNX2R1v21CMo_={6vra3NiPIj`$!7O;k@&W}1|^Ia^%
+zMXyQ^uJ`bOmc@E7$d}ifUZf16+!k7DmzymRZ}Vjx$9j|L#|zK<+7Zh{(p16Qu;Vc}
+zSR4*XWJINe7gXI+^(=Fdn5esI`z}Y&(KtuoZ8bwtsF(1wLS`pXVD2D4=K(~$yOlv=
+znfO_%4k~BMX%cj(Lpk(T33*#FJR%KJk^jS2*UKTysrOCyWU42b%%$LFU1?cdggI0K
+zIqU#Lx*9m}De61@<uc5b^=0LnnJ^#ED3$4y!e8c_!l9u$3+q!&mcMR&g_dL=&gl!}
+z8t6lEHO-5p!Hh|=G>(jY_}7o^oZJ6vVCT`?TE%eZ?XIZUXjfW8P<hdrz<-cc7B`U7
+z_?m$fxZs{yNKvl&rMHDs;RPRfKq`DLYN^*&rNKhjN5dUb27un?m?1Fb|6iwYDYS=s
+zRU~0u#b!3w8Zyrm0Y~5Fkq)^m1rAMXhYD$8AE}EWKo|6{LUN0ZKJv0<0?$fuA^>h_
+zzKw;KU<CNjod%9Rl@QC@cTVHHcs>wfZMDPm-^lg+j1%Y9=ffMZU)rBrMb+fE9;Hkl
+zd>>fie6z{zB+QFd!`sT1LOmrqIg{1(Bzqk)s6h2nySh~Ha*@0iVrcrk6jUvYp($DN
+zII2;R;i-Zeb*(pBvV!IOyT3o%etIl#8##NY^51(L=S5e?g6PFviYaT$<!7yq;;+8L
+zrVFe3pTE%^ybFGZ|KPAo+btgzMK<^G-k7jfW$1Az$5H?;g)hTDS^aZZ4V9N6h<Fy-
+zp8HR)8Ip+q3)Yb!HG5>*N9w7e`7{-r8^w-a;=j6w^Ug=iFk!{~Eh|_gfA<!O_XY@5
+zN2_^af%i-J__}|{sIVA?`5gdre3VkCVk3iYE?y((0dn4d)D}8}`Oh;rCPb;iD*C?Z
+z8~_gqFTe(-TmTkt0$)2+=oKrhPTXeQVB{WUus&r#1(n)?wl#F3;~e2|bHgRC<O)Lu
+zl(Yp<#~aVI3zpdEV##Ux;}pn)eZ*JlX9@=*Z>FcGD^=4qvMrCF-OxD4XWI(6VUI?a
+zBjC#^I%@7WJgNY{J#wF~b~UtnJ#p^s_<a-^gM5@?@%OAij}|?QH>P=7OECC|Dw)`4
+zaAS_Yi~-M2_<XzV)51`I2$>`Zv+39O{J-H!WZ_h3Le~+~-Dui4c2V_D(V*d7yDoP}
+z|4AezR}W(SmsH7L?NGaVk4~fbr@FyR_r2q8ERqX7Zi;Is+*grTxLw?usKl&+cKwF0
+z^mYTti!q;1-cc`JJ^PUz3R4V{GMRY=MB0{4a8I@HaBT^GTN53Hb6*$ym#{%^sXHMf
+zbQNvK-AY&%4}_A$CXdaxhAV54?C5&?IE~)sm5u2ZZwG$lK8kFT>|^y<=f*$*5dC};
+zPuHd6nE0}1#{KJQAt0$+AJTCkIRHU#4cnuu9F)z6hdG3>z|HssjHVH!C#^+4odqM2
+z`!YqBdbtZRJH$=ydr~J*yXqIew}nYw2V-JV)_m!Z$AsU*zC3bqlP(ANY&d9rx<&C=
+z+hsxUv7*Ojc)a!1@>Tty8_{bia1a&Kl{Lx_&-}P0&@)%ekJlg_N`oCyA_-wjLkk|I
+z9FDv{{SFZcEOK`m_g2{2&L!}AWPws&v=%^{-WG~m@$22^oqhQJD$w<f{FpAJ#Jwe$
+z|9UWbv0ij@!X(;x1G7wA%?YHE`zatW#|-@5i<~0+M%Es`k^wL#aR@mi1xZ%#od4~+
+zz9l1)0Cw(-Qlh+mQZo=Tt(ra~1eSt5rOkc*P2XuXNMyx_yroPX(_jyD4(A<2uj-YD
+z^ige{fP)Z_dQ)ybzWzZ0<SJ>c>7DTt8E%~yy|P%U%uwI2#bp3&G}JO0P#J(Nq}^`l
+zF!1%F8wmW57_<rTVm2BK0hOpUt*oOaYt=>k&(KZqJU4)&g;jXz%R;)eu{s;5PvJ5F
+zWU+V<Y=yRnL2>98ZM)C>9o(P09(SUyry31&6c00c839^MM17?`9Te!gh@05no;H(C
+zU@JR&8pdvEiP8EB%XtO?JvK6%`_BO?;~IM`?}}o7|LfC}@tMdutg}+o_MTjz^3N5{
+zW;N2TBez&D(GA37`a)glmOjsqioOv1T<cBI>(@&w4;FS-jyh6jakb0{G%JCa0Z_R?
+zx>pK=`P~peR%7oEA8yI8-d8^(H{E^iZQYQ<R4=S58|J6z{xg&BKAGPAe&5=aKMAKA
+z0$DS}l7%Hh7(}LLSsVtw@tbj8_Gc}!%_d*5_o@85Z2tSJXH4>qKYHJD4~0e*j2`-~
+z{i-CcvUF+VFTM9<4tW_#Wr4O)4>TpMaCYao6#8o-FGg*9j;WgXUGvu~X$UJw!&m}2
+zbD|A#l5~NG#uyIdJJHDKF8LqdUI(t0=V)i*n$e)fbbRuz`)~5m?(56Idm5t$^fmn|
+zj?s4=58po!U0oh2FUV)b7R$nAwVs_@RfqQ6ha_+aSzioEd%Hf{<+`TU@RFJ~$p^kw
+zM3k`>g^5KUh!X>90DUKrd!I^VD`Ti{>%^_Z#;*8`hZ4+q{Q?FV^cGb_3U-wPM4yui
+z+&|IQxwWz7C*DspQDerHvRvvWaYH@NLr7T=&qg)`@z(s8=VnUP+H$hEi(z!<cQZyJ
+zjj3{oa%Ut)3`o*S*qRk#5+z*BF0~#nC3T-{YElWDl9sj#M_MVPWIBoC3GD1(@kKBr
+zfU#!BkR;5pSN^(|Pi=gtv--Mok<e(w>$sEmYG_)Qrm{4wKTP}L1+MF?eRxcYP6VwB
+zt#vxE?-lUqr9<lEj>+P1^)Fo%J%qpw_LB*<r9OOr|0iyYNd-Of&Kk_Ek|7;VZT4`W
+z33%FboZmCIcSI^yD*))91T^<IR=?)~B2v4rp5zu*QR*cMMH0&TglstA89N<@frt7P
+z&>mSSrp%kp5T=+z@kx3Xz8=|LxPmZwr|-jdx;Y%^l_B-Z5Ew@FN}x{Mx1^OScFYF1
+z1hy%}Z3<OsVFHzy`^MVV@Yg-Me5ac=NBvK;Z?F81&x-%La?2hrte_BH=Mu4+1AE7v
+z6Yu&*j7nkqqDNPAmJk{YJ&tsi_g4DG6HfJ;RY*J5n!|rhv2*@(!U<@L@>&3DfJ%C&
+zk!3>=R`+bxuisj2(PUKjUpqB120h9@XP&+>h5$LHmN`I_$N?h?`#CF8KvHIILl}6b
+zCwafqKS?yi60gnw_JAo;Z0rR~71`kKSwXY-6=1giO^;N?Ss#He&A2nQ$a~}4>nner
+zaqwte((1Z|_u9+<sXlf}@3KZ2H9-Kn3iH)$>|R%qG7ZrNO4dRfo-?>#W;~rF_E#3M
+zt|lBngFJ#QMdgbg9w`rkWq2Y)obJ64a$?RpyO0$RjM}}TowxW&Q>q8e7KSz}m(NKu
+z+yKF9z%)*@U~v)H`cJmbZq_ZG%r?$K2wEsf!+^j=l@K#8hW!q@5VOAyt@w706M(~^
+z&7k3KZd~^Z<uCa_Mh2RY8jQt<%LB^NNy6shlCY2SY<;-suY}5cXNCkc<RS8$PwvHq
+z8}Djp(OQo#Qx#txG*ouS29^aT>S)JPVs*ykA|xK%2fPS8Ou7(7j11H$VW*qEzMFZ}
+z?Y%v4tueCdg<N0>`?DqWtZ0`ID~AAN+oDB^0kbo6idM;l@%vF|81znsw*jD(mmZLY
+zx|%Kwb)K4=m}sdT#XQzR$s`nfAXJr_Uhq@A@Bx!$G`nD_8Guaf<yaWN@-kt+F8&f>
+z(#^m)hh3xU49s}~@fxX&LIY3V!@uf7BgCuq>cd(cs#W2OIRzOzqf&-IZB(9D&se(9
+zp<9Zu-IMpDi`<WV_G%v~B&?XHnY^(H0FsbBPsekXOglNhFREw3@C#D7a%f1B2$7dR
+z0BJdod5+}e<t;exYk4*oe|9NBP`a}LVXTr<NS-n^Pkq)K6T`Q)VQ3zbgik$mu0pSM
+fW<b<fDXhPK(a^D)N##=i2>=sAOM^N+&!qnY7iN21
+
+literal 0
+HcmV?d00001
+
+diff --git a/public/icons/icon-512.png b/public/icons/icon-512.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..315d202239f908a92332358c5d8167b983e5c3b1
+GIT binary patch
+literal 18074
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/public/icons/icon-maskable-512.png b/public/icons/icon-maskable-512.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..161b7852dc42b679a84e1aa0ab75940d9dfd5d08
+GIT binary patch
+literal 11177
+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
+UHg)bi+!nCU?4aojW9RGt3o%5RwEzGB
+
+literal 0
+HcmV?d00001
+
+diff --git a/public/sw.js b/public/sw.js
+new file mode 100644
+index 0000000..72a5a2a
+--- /dev/null
++++ b/public/sw.js
+@@ -0,0 +1,19 @@
++/* The installed-app service worker (owner, mobile round 2026-10-26).
++ *
++ * PASS-THROUGH BY DESIGN. It exists because Chrome needs a worker with a
++ * fetch handler to upgrade the manifest into a WebAPK. It caches nothing:
++ * the server is local, and a rebuilt .next must never be shadowed by a
++ * stale shell. Do not add a cache here without a versioned invalidation
++ * story (the build is replaced in place by the runit service).
++ */
++self.addEventListener("install", () => {
++	self.skipWaiting();
++});
++
++self.addEventListener("activate", (event) => {
++	event.waitUntil(self.clients.claim());
++});
++
++self.addEventListener("fetch", () => {
++	// No respondWith(): the network answers every request unchanged.
++});
+diff --git a/scripts/make-icons.mjs b/scripts/make-icons.mjs
+index 066dbb6..47f7395 100644
+--- a/scripts/make-icons.mjs
++++ b/scripts/make-icons.mjs
+@@ -4,6 +4,9 @@
+ //
+ //   build/icon.ico  — Windows (.ico with 16/24/32/48/64/128/256 PNG entries)
+ //   build/icon.png  — Linux (512×512; AppImage/deb/desktop entry)
++//   public/icons/   — the installed-app set: 192/512 + a maskable 512
++//                     (Android crops maskable icons to its launcher shape;
++//                     the glyph sits inside the inner 70% safe zone)
+ //
+ // macOS does NOT come from here: build/icon.icon (the Icon Composer
+ // document) is the mac source of truth, compiled by actool at package
+@@ -15,7 +18,7 @@
+ // edges than downsampling a raster. Committed outputs; rerun only when
+ // the design changes: `node scripts/make-icons.mjs`.
+ import { Resvg } from "@resvg/resvg-js";
+-import { readFileSync, writeFileSync } from "node:fs";
++import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+ import path from "node:path";
+ import { fileURLToPath } from "node:url";
+ 
+@@ -53,3 +56,21 @@ console.log(`build/icon.ico  ${ICO_SIZES.join("/")} — ${(ico.length / 1024).to
+ const png512 = render(512);
+ writeFileSync(path.join(root, "build", "icon.png"), png512);
+ console.log(`build/icon.png  512×512 — ${(png512.length / 1024).toFixed(1)} KB`);
++
++// ---- public/icons: the installed-app (PWA) set --------------------------
++const pwaDir = path.join(root, "public", "icons");
++mkdirSync(pwaDir, { recursive: true });
++const writePwa = (name, png) => {
++	writeFileSync(path.join(pwaDir, name), png);
++	console.log(`public/icons/${name}  ${(png.length / 1024).toFixed(1)} KB`);
++};
++
++writePwa("icon-192.png", render(192));
++writePwa("icon-512.png", png512);
++
++// Maskable: Android may crop the icon to a circle/squircle from the inner
++// 80% safe zone. Draw the squircle at 70% of a 512 canvas, centered on the
++// app background, so no part of the mark is lost under the launcher shape.
++const maskableGlyph = render(358);
++const maskableSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" fill="#141414"/><image x="77" y="77" width="358" height="358" href="data:image/png;base64,${maskableGlyph.toString("base64")}"/></svg>`;
++writePwa("icon-maskable-512.png", new Resvg(maskableSvg).render(512, 512).asPng());

@@ -1,0 +1,23 @@
+diff --git a/learnharness/log/run b/learnharness/log/run
+new file mode 100755
+index 0000000..07332cc
+--- /dev/null
++++ b/learnharness/log/run
+@@ -0,0 +1,5 @@
++#!/data/data/com.termux/files/usr/bin/sh
++pwd=${PWD%/*}
++service=${pwd##*/}
++mkdir -p "$LOGDIR/sv/$service"
++exec svlogd -tt "$LOGDIR/sv/$service"
+diff --git a/learnharness/run b/learnharness/run
+new file mode 100755
+index 0000000..b663319
+--- /dev/null
++++ b/learnharness/run
+@@ -0,0 +1,6 @@
++#!/data/data/com.termux/files/usr/bin/sh
++exec 2>&1
++termux-wake-lock
++cd /data/data/com.termux/files/home/learning/learnharness || exit 1
++export NEXT_TELEMETRY_DISABLED=1
++exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p 3000
