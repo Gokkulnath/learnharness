@@ -24,6 +24,7 @@
 		"desktop:dist": "rm -rf dist .next/standalone && next build && node scripts/smoke-provider-runtime.mjs && node scripts/build-server.mjs && node scripts/smoke-server.mjs && DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} APPLE_KEYCHAIN_PROFILE=LH_NOTARY APPLE_TEAM_ID=JS6XN22HY6 electron-builder --mac --arm64"
 	},
 	"dependencies": {
+		"@capacitor/core": "^8.5.3",
 		"@earendil-works/pi-agent-core": "1.4.0",
 		"@earendil-works/pi-ai": "1.4.0",
 		"@mozilla/readability": "^0.6.0",
@@ -75,6 +76,8 @@
 		"katex": "$katex"
 	},
 	"devDependencies": {
+		"@capacitor/android": "^8.5.3",
+		"@capacitor/cli": "^8.5.3",
 		"@next/eslint-plugin-next": "^16.3.3",
 		"@tailwindcss/postcss": "^4.3.3",
 		"@types/node": "^24.0.0",
