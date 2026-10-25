@@ -12,10 +12,11 @@ This bundle reproduces the current Termux setup:
 The patches are based on commit `0795ef1`. Apply them to a clean checkout at
 that commit (or a tree that matches it). Use `--check` first on any other tree.
 
-> **Current branch note:** `termux-mobile-setup` at `97a6f34` already contains
-> `0001` and `0003` (and the operational wrappers described in
-> [`TERMUX.md`](../TERMUX.md)). Do **not** reapply those code patches there.
-> Apply only `0004` to add the two reference docs.
+> **Source branch / fork artifact:** `termux-mobile-setup` already contains the
+> code and docs patches. Do **not** reapply `0001`–`0004` there. The fork
+> artifact is `termux-mobile-setup-squashed`, one commit on `main`; do not apply
+> the per-file patches to it. If `0001`/`0003` are already applied but the docs
+> are not, apply only `0004`.
 
 Verified on: Android/arm64, Termux, Node 26.3.1, npm 11.17.0, Next 16.3.2.
 The production build succeeds and both `http://127.0.0.1:3000` and
@@ -40,6 +41,15 @@ The patches were verified to apply cleanly to a pristine `HEAD` worktree and
 reproduce the current files byte-for-byte. `0004` was additionally verified
 after `0003`, and reversing `0004` restores the pre-doc tree. `0002` was verified
 against an empty directory and against the installed units.
+
+## Fork artifact
+
+`termux-mobile-setup-squashed` is a single commit on `main` containing the full
+branch work. Use it when you want one push-ready commit rather than the
+per-file patch sequence. The equivalent single diff is generated alongside the
+working tree as `dist/termux-mobile-setup-squashed.patch` (gitignored), applied
+with `git apply --binary` to a clean `main`. Do not combine it with
+`0001`–`0004`.
 
 ## Prerequisites
 
@@ -77,8 +87,7 @@ git apply --binary patches/0003-mobile-pwa-shell.patch
 git apply patches/0004-termux-mobile-docs.patch
 ```
 
-On the current `termux-mobile-setup` branch (`97a6f34`+), `0001` and `0003` are
-already committed. Apply only the docs patch:
+If `0001`/`0003` are already applied but the docs are not, apply only `0004`:
 
 ```sh
 git apply --check patches/0004-termux-mobile-docs.patch
@@ -86,7 +95,10 @@ git apply patches/0004-termux-mobile-docs.patch
 ```
 
 `0004` is docs-only and belongs after `0003`. It adds the two reference
-documents; it does not change application code, the build, or the service.
+documents; it does not change application code, the build, or the service. On
+`termux-mobile-setup`, all three patches are already committed. On
+`termux-mobile-setup-squashed`, everything is one commit; do not apply any
+patch there.
 
 Now install the runit units. This assumes a fresh service directory; remove an
 existing unit first if you are replacing one:
@@ -287,8 +299,9 @@ NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=3072 \
   npm run build -- --webpack
 ```
 
-If you are on `termux-mobile-setup` (`97a6f34`+), `0001`/`0003` are committed
-and should not be reversed to remove the docs. Reverse only `0004` if you just
-want the pre-doc tree.
+If `0001`/`0003` are already applied and you only want to remove the docs,
+reverse only `0004`; do not reverse committed code patches. On
+`termux-mobile-setup-squashed`, reset or revert the one commit instead of
+reversing individual patches.
 
 Your data (`auth.json`, `data/`) is not touched by the rollback.

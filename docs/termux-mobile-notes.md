@@ -4,10 +4,14 @@ Dated record of the Android/Termux service work and the compact phone/PWA UI
 round.
 
 - Date: **2026-10-26**
-- Base commit: `0795ef1`
+- Patch base: `0795ef1`
+- Source branch: `termux-mobile-setup`
+- Fork artifact: `termux-mobile-setup-squashed` — one commit on `main`; single
+  patch at `dist/termux-mobile-setup-squashed.patch`
 - Final state: production webpack build running under runit on
   `0.0.0.0:3000`; local and LAN endpoints returning 200.
 - Operational runbook: [`termux-mobile-deployment.md`](termux-mobile-deployment.md).
+- Quick start: [`../TERMUX.md`](../TERMUX.md).
 - Patch install guide: [`../patches/README.md`](../patches/README.md).
 
 ## Goal and scope
@@ -38,6 +42,9 @@ The LAN service has **no authentication**. Keep it on a trusted network.
 
 | Item | State |
 |---|---|
+| Source branch | `termux-mobile-setup` |
+| Fork artifact | `termux-mobile-setup-squashed` (one commit on `main`) |
+| Patch base | `0795ef1` |
 | Node / npm | 26.3.1 / 11.17.0 |
 | Next.js | 16.3.2 |
 | Build | `npm run build -- --webpack` — success |
@@ -47,7 +54,6 @@ The LAN service has **no authentication**. Keep it on a trusted network.
 | Local URL | `http://127.0.0.1:3000` — 200 |
 | LAN URL | `http://192.168.0.10:3000` — 200 |
 | Logs | `$PREFIX/var/log/sv/learnharness/current` |
-| Patch base | `0795ef1` |
 
 The build took ~7–8 minutes (94 s webpack, 25 s TypeScript, 1.3 s static
 generation, then tracing). `.next` was ~850 MB; `.next/standalone` ~118 MB.
@@ -61,7 +67,7 @@ generation, then tracing). `.next` was ~850 MB; `.next/standalone` ~118 MB.
 | Bind `0.0.0.0:3000` | Phone and other LAN devices need access | No port-forwarding; trusted LAN only |
 | No authentication | Deliberate scope choice for a home LAN | Anyone on the Wi-Fi can read/write app state; warn |
 | runit + direct Next exec | `npm start` did not reliably forward SIGTERM; old `next-server` held port 3000 | Keep `exec node node_modules/next/dist/bin/next ...` |
-| Patch bundle for changes | Reproducible install without committing environment setup | `0001` source, `0002` service units, `0003` mobile/PWA, `0004` docs |
+| Patch bundle for changes | Reproducible install without committing environment setup | `0001` source, `0002` service units, `0003` mobile/PWA, `0004` docs; fork uses the single squashed branch |
 | Compact breakpoint 928 / CSS 927 | Matches `SIDEBAR_AUTOCLOSE` in the Electron shell (640 px content floor + 288 px sidebar) | Keep `SIDEBAR_AUTOCLOSE` and the CSS breakpoint in sync |
 | Compact drawer is transient | A phone should not inherit a desktop “sidebar open” preference and cover the lesson | Do not write mobile open/close to `lh:sidebar-open`; leaving compact restores the stored desktop preference |
 | Electron keeps its behavior | Desktop windows need expand-to-restore and persisted sidebar state | Gate compact layout with `IS_ELECTRON` and `html:not(.lh-electron)` |
@@ -116,6 +122,17 @@ service replaces `.next`.
 | `components/md-blocks.tsx` | Copy/expand controls visible on coarse pointers | `0003` |
 | `components/ui/button.tsx` | `icon` / `icon-lg` coarse sizes | `0003` |
 
+### Operational wrappers
+
+These are committed on `termux-mobile-setup`; they are not part of `0003`.
+
+| File | Change |
+|---|---|
+| `TERMUX.md` | Current quick start, everyday commands, PWA/security notes, and the “patches are already applied here” warning |
+| `scripts/termux/build.sh` | Stop service, optional install, clean webpack build, restart, local health check |
+| `scripts/termux/install.sh` | Prerequisite check, build, service install, URLs |
+| `scripts/termux/service.sh` | Install/remove/start/stop/restart/status/logs for the runit unit; supports `LH_HOST`, `LH_PORT`, `LH_SERVICE_NAME` |
+
 ### Service packaging
 
 | File | Change | Patch |
@@ -133,7 +150,7 @@ service replaces `.next`.
 
 | File | Status |
 |---|---|
-| `next-env.d.ts` | Rewritten by `next build` from `.next/dev/types/*` to `.next/types/*`; generated, not in the patches. Commit/revert decision still open. |
+| `next-env.d.ts` | Committed with `.next/dev/types/*`; `next build` rewrites it to `.next/types/*`. Keep that generated diff out of commits. |
 | `docs/termux-mobile-deployment.md` | Operational runbook; added by `0004`. |
 | `docs/termux-mobile-notes.md` | This learnings/change log; added by `0004`. |
 
@@ -278,8 +295,8 @@ documentation-only and has no build effect.
   rendering works because the Android arm64 `@napi-rs/canvas` and
   `@resvg/resvg-js` binaries load.
 - `next-env.d.ts` is generated and flips between `.next/dev/types/*` and
-  `.next/types/*` depending on whether `dev` or `build` ran. It is not part of
-  the patch bundle.
+  `.next/types/*` depending on whether `dev` or `build` ran. It is committed at
+  the dev-types version; do not commit the build-generated diff.
 - The full test suite last ran before the final density/dock change: 2,127
   passed, 3 failed, 0 skipped (~254 s). The failures were environment/pre-existing:
   - `tests/demos.test.tsx` — no Chrome/Chromium;
@@ -323,8 +340,6 @@ documentation-only and has no build effect.
   inspected.
 - **Termux:Boot is not installed.** Services start when a Termux shell opens and
   `start-services.sh` runs.
-- **`next-env.d.ts` commit decision** is still open; it is generated by the
-  build.
 - **Density edge cases** remain: 8.8 px `text-xs`, unscaled arbitrary text
   sizes, and the normal-mode gradient/reserve mismatch.
 - **Full test suite** should be rerun after the final density change; expect the
@@ -344,6 +359,11 @@ Keep these true unless deliberately revisiting the design:
 - Keep safe-area ownership in the app frame plus the fixed drawer.
 - Keep the service worker pass-through; do not add caching without invalidation.
 - Keep desktop and Electron layout behavior unchanged.
+- On `termux-mobile-setup`, do not reapply the patches; they are already
+  committed.
+- Prefer the `scripts/termux/*.sh` wrappers for ordinary install/build/service
+  work; they encode the same webpack and direct-exec rules.
+- Do not commit the build-generated `.next/types/*` change in `next-env.d.ts`.
 - Do not add swipe-to-close, an APK wrapper, or offline mode without a new
   decision.
 
@@ -361,14 +381,22 @@ Keep these true unless deliberately revisiting the design:
 7. Added `0.8×` phone density and the conditional questionnaire dock fit.
 8. Rebuilt, restarted, verified endpoints/CSS, packaged patches, and validated
    apply/rollback.
-9. Added the runbook and this change log; packaged them as `0004` and included
-   them in the zip.
+9. Added the operational quick path (`TERMUX.md`, `scripts/termux/*.sh`).
+10. Added the runbook and this change log; packaged them as `0004` and included
+    them in the zip; squashed the branch work for the fork artifact.
 
 ## References
 
 - [`termux-mobile-deployment.md`](termux-mobile-deployment.md) — current
   install/build/run/verify commands.
+- [`../TERMUX.md`](../TERMUX.md) — current quick start and everyday wrappers.
+- [`../scripts/termux/install.sh`](../scripts/termux/install.sh) — one-shot
+  installer.
+- [`../scripts/termux/build.sh`](../scripts/termux/build.sh) — rebuild/restart.
+- [`../scripts/termux/service.sh`](../scripts/termux/service.sh) — service
+  management.
 - [`../patches/README.md`](../patches/README.md) — patch install guide.
 - [`development.md`](development.md) — general development commands.
 - [`architecture.md`](architecture.md) — layering and the barrel/import law.
-- [`desktop-release.md`](desktop-release.md) — desktop packaging, not used here.
+- [`desktop-release.md`](desktop-release.md) — desktop release flow, not used
+  here.

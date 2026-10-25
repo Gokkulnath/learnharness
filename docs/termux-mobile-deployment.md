@@ -4,14 +4,16 @@ Operational guide for running LearnHarness headless on Android/arm64 under
 Termux, supervised by runit, and reachable from other devices on the LAN.
 
 - Last verified: **2026-10-26**, patch base commit `0795ef1`.
-- Current branch: `termux-mobile-setup` at `97a6f34` (code patches already
-  committed; docs are added by `0004`).
+- Patch base: `0795ef1`.
+- Source branch: `termux-mobile-setup`.
+- Fork artifact: `termux-mobile-setup-squashed` (one commit on `main`); single
+  patch at `dist/termux-mobile-setup-squashed.patch`.
 - Companion history/decision log: [`termux-mobile-notes.md`](termux-mobile-notes.md).
 - Patch install guide: [`../patches/README.md`](../patches/README.md).
 - Quick path: [`../TERMUX.md`](../TERMUX.md) and `scripts/termux/install.sh`.
 - Desktop/Electron releases are separate: [`desktop-release.md`](desktop-release.md).
 
-The quickest setup on the current branch is the installer:
+The quickest setup on the source branch is the installer:
 
 ```sh
 sh scripts/termux/install.sh
@@ -156,13 +158,16 @@ git apply patches/0004-termux-mobile-docs.patch
 `0003` contains binary PNG icons; `--binary` is required. `0004` is the
 documentation-only patch and goes after `0003`; it does not require a rebuild.
 
-On the current `termux-mobile-setup` branch (`97a6f34`+), `0001` and `0003` are
-already committed. Do not reapply them; apply only `0004`:
+If `0001`/`0003` are already applied but `0004` is not, apply only `0004`:
 
 ```sh
 git apply --check patches/0004-termux-mobile-docs.patch
 git apply patches/0004-termux-mobile-docs.patch
 ```
+
+On `termux-mobile-setup`, all three patches are already in the tree; do not
+reapply them. On the squashed fork branch, everything is one commit; do not
+apply patches at all.
 
 ### 2. Install the runit units
 
@@ -357,6 +362,10 @@ NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=3072 \
 
 The rollback does not touch `auth.json` or `data/`.
 
+If `0001`/`0003` are already applied and you only want to remove the docs,
+reverse only `0004`; do not reverse committed code patches. On the squashed fork
+branch, reset or revert the one commit instead of reversing individual patches.
+
 ## Current-device paths
 
 ```text
@@ -370,8 +379,12 @@ The `dist/` copy is gitignored.
 
 ## References
 
+- [`TERMUX.md`](../TERMUX.md) — current quick start and everyday wrapper commands.
+- [`scripts/termux/install.sh`](../scripts/termux/install.sh) — one-shot install.
+- [`scripts/termux/build.sh`](../scripts/termux/build.sh) — rebuild + restart.
+- [`scripts/termux/service.sh`](../scripts/termux/service.sh) — service management.
 - [`patches/README.md`](../patches/README.md) — patch-by-patch install guide.
 - [`termux-mobile-notes.md`](termux-mobile-notes.md) — why these choices were
   made, the full change inventory, and known limitations.
 - [`development.md`](development.md) — general development commands.
-- [`desktop-release.md`](desktop-release.md) — desktop packaging/release flow.
+- [`desktop-release.md`](desktop-release.md) — desktop release flow.
